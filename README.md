@@ -1,87 +1,83 @@
-# GoldPrice - 黄金价格 MacOS 状态栏应用
+# GoldPrice - 黄金价格 macOS 状态栏应用
 
 ## 项目简介
 
-GoldPrice 是一个 MacOS 状态栏应用，用于实时显示黄金价格。
-应用直接在状态栏显示最新的黄金价格（人民币）。
-数据源涵盖京东金融实时金价、水贝黄金当天金价、全国各大知名品牌金店的当天金价。
-
+GoldPrice 是一个 macOS 状态栏应用，用于实时显示黄金价格。
+支持国内金价（京东浙商、京东民生）和国际金价（伦敦金、纽约金），并提供今日涨跌、24 小时走势图、持仓收益计算等功能。
 
 ## 效果展示
 
 - 浅色模式
 ![Light](./Assets/Light.png)
 
-
 - 深色模式
 ![Dark](./Assets/Dark.png)
 
-
 ## 功能特点
 
-- 🏅 **实时价格显示** - 在 MacOS 状态栏实时显示黄金价格（人民币）
-- 📊 **多数据源支持** - 支持12个数据源，包括京东金融（实时）、水贝黄金（当天）和 10 大品牌金店（当天）
-- ⚡ **金价实时对比** - 通过数据源菜单列表对比各个数据源的金价，且支持切换状态栏显示的金价数据源
-- 🔄 **自动定时刷新** - 每秒自动刷新价格数据，保持数据最新
+- 🏅 **实时金价** - 状态栏实时显示黄金价格，支持自定义图标（emoji 选择器）
+- 📊 **多数据源** - 京东浙商、京东民生（元/克）、伦敦金、纽约金（$/oz）
+- 📈 **今日涨跌** - 显示涨跌幅度与方向箭头
+- 📉 **24h 走势图** - 悬浮价格行即可查看当日走势、最高价、最低价
+- 💰 **持仓收益** - 设置持仓克数和买入均价，实时计算收益金额与收益率
+- ⚙️ **偏好设置** - 自定义状态栏图标、状态栏收益显示模式（金额/收益率/都显示/不显示）
+- 🔄 **自动刷新** - 定时自动刷新价格数据，支持手动立即刷新
+
+## 安装
+
+### 直接下载
+
+前往 [Releases](https://github.com/iamzjt-front-end/GoldPrice/releases) 下载最新的 `GoldPrice.dmg`，打开后将 GoldPrice.app 拖入 Applications 文件夹即可。
+
+### 从源码构建
+
+```bash
+# 克隆仓库
+git clone https://github.com/iamzjt-front-end/GoldPrice.git
+cd GoldPrice
+
+# 调试运行
+swift build && .build/debug/GoldPrice
+
+# 一键打包 DMG
+bash build.sh
+```
 
 ## 系统要求
 
-- MacOS 12.0 或更高版本
+- macOS 12.0 或更高版本
 - Swift 5.5 或更高版本
-
-
-
-## 构建与运行
-
-### 克隆仓库
-
-```bash
-git clone https://github.com/Tespera/GoldPrice.git
-```
-
-### 构建与运行
-
-```bash
-# 构建应用
-swift build
-
-# 运行应用
-swift run
-
-# 清理构建文件
-swift clean
-```
-
-### 手动构建
-
-```bash
-# 构建应用
-swift build -c release
-
-# 运行应用
-./.build/release/GoldPrice
-```
-
-
 
 ## 项目结构
 
-- `GoldPriceApp.swift` - 应用入口和主要结构
-- `StatusBarController.swift` - 状态栏控制器，管理状态栏显示和智能菜单系统
-- `GoldPriceService.swift` - 数据获取服务，负责从各个数据源获取黄金价格
-- `GoldPriceView.swift` - 详情视图，显示价格信息、数据源选择和设置选项
-- `Package.swift` - Swift Package Manager 配置文件
+| 文件 | 说明 |
+|------|------|
+| `GoldPriceApp.swift` | 应用入口 |
+| `StatusBarController.swift` | 状态栏控制器，管理菜单与交互 |
+| `GoldPriceService.swift` | 数据获取服务，负责从各数据源获取金价 |
+| `PriceModels.swift` | 数据模型（数据源、价格信息、持仓、设置） |
+| `PriceHistoryManager.swift` | 历史数据与持仓/设置的持久化管理 |
+| `PriceMenuItemView.swift` | 主菜单价格行自定义视图 |
+| `ChartMenuItemView.swift` | 走势图子菜单视图 |
+| `MiniChartView.swift` | 24h 走势图绘制 |
+| `PositionMenuItemView.swift` | 持仓显示/编辑、偏好设置视图 |
+| `build.sh` | 一键编译打包 DMG 脚本 |
 
+## 数据存储
+
+应用数据存储在 `~/Library/Application Support/GoldPrice/` 目录下：
+
+- `priceHistory.json` - 当日价格历史（每日零点自动清理）
+- `position.json` - 持仓信息
+- `settings.json` - 偏好设置
 
 ## 技术特性
 
+- **原生菜单** - 基于 NSMenu + NSHostingView，嵌入 SwiftUI 自定义视图
 - **响应式设计** - 支持 macOS 深色/浅色模式自动适配
-- **并发处理** - 使用 Swift Combine 框架实现响应式数据绑定
-- **错误处理** - 完善的网络错误处理和降级显示机制
-- **内存优化** - 高效的数据缓存和定时器管理
-- **网络适配** - 智能处理不同API的数据格式和编码
-
-
+- **Combine 框架** - 响应式数据绑定与自动 UI 更新
+- **文件持久化** - 数据存储在 Application Support 目录，debug/release 一致
+- **网络适配** - 智能处理不同 API 的数据格式和编码（JSON / GB18030）
 
 ## 许可证
 
