@@ -29,6 +29,14 @@ GoldPrice 是一个 macOS 状态栏应用，用于实时显示黄金价格。
 
 前往 [Releases](https://github.com/iamzjt-front-end/GoldPrice/releases) 下载最新的 `GoldPrice.dmg`，打开后将 GoldPrice.app 拖入 Applications 文件夹即可。
 
+> **提示**：如果打开时提示 **"app已损坏，无法打开"**，请在终端运行以下命令：
+>
+> ```bash
+> xattr -cr /Applications/GoldPrice.app
+> ```
+>
+> 该命令会清除 macOS 为从网络下载的文件添加的隔离属性（`com.apple.quarantine`）。由于应用未经过 Apple 签名公证，Gatekeeper 会阻止其运行，执行此命令后即可正常打开。
+
 ### 从源码构建
 
 ```bash
