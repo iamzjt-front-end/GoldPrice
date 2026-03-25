@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import UserNotifications
 
 class StatusBarController: NSObject, NSMenuDelegate {
     private var statusBar: NSStatusBar
@@ -99,6 +100,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         button.title = title
+        checkPriceAlerts()
     }
 
     // MARK: - Menu
@@ -129,25 +131,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Source picker submenu
-        let pickerMenu = NSMenu()
-        for source in GoldPriceSource.allCases {
-            let item = NSMenuItem(title: source.rawValue, action: #selector(selectDisplaySource(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = source
-            if dataService.currentSource == source {
-                item.state = .on
-            }
-            pickerMenu.addItem(item)
-        }
-        let spacer = NSMenuItem()
-        spacer.view = SubmenuOffsetView()
-        pickerMenu.insertItem(spacer, at: 0)
-        let pickerItem = NSMenuItem(title: "状态栏显示", action: nil, keyEquivalent: "")
-        pickerItem.submenu = pickerMenu
-        menu.addItem(pickerItem)
-
-        menu.addItem(NSMenuItem.separator())
+        // Alerts (价格提醒)
+        menu.addItem(makeAlertMenuItem())
 
         // Settings (偏好设置)
         menu.addItem(makeSettingsMenuItem())
@@ -239,19 +224,27 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         let editorSubmenu = NSMenu()
+
+        if let pos = historyManager.position,
+           let source = pos.source,
+           let info = dataService.allSourcePrices[source],
+           let currentPrice = info.priceDouble {
+            let records = historyManager.getTodayRecords(for: source.rawValue)
+            let chartView = PositionChartMenuItemView(
+                position: pos,
+                currentPrice: currentPrice,
+                records: records
+            )
+            let chartItem = NSMenuItem()
+            chartItem.view = chartView
+            editorSubmenu.addItem(chartItem)
+            editorSubmenu.addItem(.separator())
+        }
+
         let editorView = PositionEditorView(
             position: historyManager.position,
             allSources: GoldPriceSource.domesticSources
-        ) { [weak self] in
-            guard let self = self else { return }
-            self.statusItem.menu?.cancelTracking()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                self.statusItem.menu = self.buildMenu()
-                if let button = self.statusItem.button {
-                    button.performClick(nil)
-                }
-            }
-        }
+        )
         let editorItem = NSMenuItem()
         editorItem.view = editorView
         editorSubmenu.addItem(editorItem)
@@ -268,15 +261,17 @@ class StatusBarController: NSObject, NSMenuDelegate {
         ])
 
         let settingsSubmenu = NSMenu()
-        let settingsView = SettingsEditorView { [weak self] in
-            guard let self = self else { return }
-            self.statusItem.menu?.cancelTracking()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                self.statusItem.menu = self.buildMenu()
-                if let button = self.statusItem.button {
-                    button.performClick(nil)
-                }
+        let settingsView = SettingsEditorView(
+            currentSource: dataService.currentSource,
+            onSourceChange: { [weak self] source in
+                self?.dataService.setDataSource(source)
+                self?.updateStatusBarDisplay()
+                self?.statusItem.menu = self?.buildMenu()
             }
+        ) { [weak self] in
+            self?.dataService.reloadRefreshIntervalFromSettings()
+            self?.updateStatusBarDisplay()
+            self?.statusItem.menu = self?.buildMenu()
         }
         let settingsItem = NSMenuItem()
         settingsItem.view = settingsView
@@ -285,14 +280,97 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         return item
     }
+    private func makeAlertMenuItem() -> NSMenuItem {
+        let alertCount = historyManager.alerts.count
+        let title = alertCount > 0 ? "价格提醒 (\(alertCount))" : "价格提醒"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor.labelColor
+        ])
 
-    // MARK: - Actions
+        let alertSubmenu = NSMenu()
+        let alertView = AlertEditorView()
+        let alertItem = NSMenuItem()
+        alertItem.view = alertView
+        alertSubmenu.addItem(alertItem)
+        item.submenu = alertSubmenu
 
-    @objc private func selectDisplaySource(_ sender: NSMenuItem) {
-        if let source = sender.representedObject as? GoldPriceSource {
-            dataService.setDataSource(source)
+        return item
+    }
+
+    private func checkPriceAlerts() {
+        let now = Date()
+        var alerts = historyManager.alerts
+        var didUpdateAlerts = false
+
+        for index in alerts.indices {
+            let alert = alerts[index]
+
+            guard let source = alert.source,
+                  let info = dataService.allSourcePrices[source],
+                  let currentPrice = info.priceDouble else { continue }
+
+            let conditionMet = alert.isConditionMet(currentPrice: currentPrice)
+            let shouldNotify: Bool
+
+            switch alert.repeatMode {
+            case .rearmOnCross:
+                shouldNotify = conditionMet && !alert.wasConditionMet
+            case .recurring:
+                if conditionMet && !alert.wasConditionMet {
+                    shouldNotify = true
+                } else if conditionMet, let lastTriggeredAt = alert.lastTriggeredAt {
+                    shouldNotify = now.timeIntervalSince(lastTriggeredAt) >= TimeInterval(alert.repeatInterval.rawValue)
+                } else {
+                    shouldNotify = conditionMet && alert.lastTriggeredAt == nil
+                }
+            }
+
+            if shouldNotify {
+                alerts[index].triggered = true
+                alerts[index].lastTriggeredAt = now
+                sendAlertNotification(alert: alert, currentPrice: currentPrice, unit: source.unit)
+                didUpdateAlerts = true
+            }
+
+            if alerts[index].wasConditionMet != conditionMet {
+                alerts[index].wasConditionMet = conditionMet
+                didUpdateAlerts = true
+            }
+        }
+
+        if didUpdateAlerts {
+            historyManager.saveAlerts(alerts)
+            statusItem.menu = buildMenu()
         }
     }
+
+    private func sendAlertNotification(alert: PriceAlert, currentPrice: Double, unit: String) {
+        guard Bundle.main.bundleIdentifier != nil else {
+            NSLog("[GoldPrice] Alert triggered: \(alert.sourceRawValue) \(alert.condition.rawValue) \(alert.targetPrice), current: \(currentPrice)")
+            return
+        }
+        let content = UNMutableNotificationContent()
+        content.title = "\(alert.sourceRawValue) \(alert.condition.rawValue) \(String(format: "%.2f", alert.targetPrice))"
+        content.body = "当前价格：\(String(format: "%.2f", currentPrice)) \(unit)"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "price-alert-\(alert.id)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("[GoldPrice] 通知发送失败: \(error.localizedDescription)")
+            } else {
+                NSLog("[GoldPrice] 通知已发送: \(content.title)")
+            }
+        }
+    }
+
+    // MARK: - Actions
 
     @objc private func refreshNow() {
         dataService.forceRefreshAllSources()

@@ -7,8 +7,10 @@ class PriceHistoryManager {
     private let fileURL: URL
     private let positionURL: URL
     private let settingsURL: URL
+    private let alertsURL: URL
     private(set) var position: PositionInfo?
     private(set) var settings: AppSettings = AppSettings()
+    private(set) var alerts: [PriceAlert] = []
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -17,9 +19,11 @@ class PriceHistoryManager {
         fileURL = dir.appendingPathComponent("priceHistory.json")
         positionURL = dir.appendingPathComponent("position.json")
         settingsURL = dir.appendingPathComponent("settings.json")
+        alertsURL = dir.appendingPathComponent("alerts.json")
         loadHistory()
         loadPosition()
         loadSettings()
+        loadAlerts()
         migrateFromUserDefaultsIfNeeded()
         cleanupAllSources()
     }
@@ -86,6 +90,49 @@ class PriceHistoryManager {
         guard let data = try? Data(contentsOf: settingsURL) else { return }
         if let loaded = try? JSONDecoder().decode(AppSettings.self, from: data) {
             settings = loaded
+        }
+    }
+
+    // MARK: - Alerts
+
+    func saveAlerts(_ list: [PriceAlert]) {
+        alerts = list
+        if let data = try? JSONEncoder().encode(list) {
+            try? data.write(to: alertsURL, options: .atomic)
+        }
+    }
+
+    func addAlert(_ alert: PriceAlert) {
+        alerts.append(alert)
+        saveAlerts(alerts)
+    }
+
+    func removeAlert(id: String) {
+        alerts.removeAll { $0.id == id }
+        saveAlerts(alerts)
+    }
+
+    func markAlertTriggered(id: String) {
+        if let idx = alerts.firstIndex(where: { $0.id == id }) {
+            alerts[idx].triggered = true
+            alerts[idx].lastTriggeredAt = Date()
+            saveAlerts(alerts)
+        }
+    }
+
+    func resetAlert(id: String) {
+        if let idx = alerts.firstIndex(where: { $0.id == id }) {
+            alerts[idx].triggered = false
+            alerts[idx].lastTriggeredAt = nil
+            alerts[idx].wasConditionMet = false
+            saveAlerts(alerts)
+        }
+    }
+
+    private func loadAlerts() {
+        guard let data = try? Data(contentsOf: alertsURL) else { return }
+        if let loaded = try? JSONDecoder().decode([PriceAlert].self, from: data) {
+            alerts = loaded
         }
     }
 

@@ -2,11 +2,11 @@ import AppKit
 import SwiftUI
 
 extension Color {
-    static let goldGreen = Color(red: 74/255, green: 222/255, blue: 128/255)
+    static let goldGreen = Color(red: 99/255, green: 171/255, blue: 142/255)
 }
 
 extension NSColor {
-    static let goldGreen = NSColor(red: 74/255, green: 222/255, blue: 128/255, alpha: 1)
+    static let goldGreen = NSColor(red: 99/255, green: 171/255, blue: 142/255, alpha: 1)
 }
 
 class SubmenuOffsetView: NSView {
@@ -18,9 +18,9 @@ class SubmenuOffsetView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let w = window else { return }
-        var f = w.frame
-        f.origin.x += 8
-        w.setFrame(f, display: false)
+        var frame = w.frame
+        frame.origin.x += 8
+        w.setFrame(frame, display: false)
     }
 }
 
@@ -84,14 +84,18 @@ private struct ChartPanelContent: View {
 
                 Spacer()
 
-                if !info.changeRate.isEmpty {
-                    HStack(spacing: 3) {
-                        Text(info.isUp ? "↑" : "↓")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(info.isUp ? .red : .goldGreen)
-                        Text(info.changeRate)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(info.isUp ? .red : .goldGreen)
+                if !info.changeAmount.isEmpty || !info.changeRate.isEmpty {
+                    HStack(spacing: 8) {
+                        if !info.changeAmount.isEmpty {
+                            Text(info.changeAmount)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(info.isUp ? .red : .goldGreen)
+                        }
+                        if !info.changeRate.isEmpty {
+                            Text(info.changeRate)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(info.isUp ? .red : .goldGreen)
+                        }
                     }
                 }
             }

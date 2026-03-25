@@ -1,10 +1,10 @@
-// swift-tools-version:5.5
+// swift-tools-version:5.7
 import PackageDescription
 
 let package = Package(
     name: "GoldPrice",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v13)
     ],
     products: [
         .executable(name: "GoldPrice", targets: ["GoldPrice"])
@@ -14,20 +14,7 @@ let package = Package(
         .executableTarget(
             name: "GoldPrice",
             dependencies: [],
-            path: ".",
-            exclude: [
-                "Info.plist",
-                "Assets/",
-                "Archives/",
-                "Build/",
-                ".git/",
-                ".DS_Store",
-                ".cursor/",
-                ".vscode/",
-                "README.md",
-                "build.sh",
-                "AppIcon.icns"
-            ]
+            path: "Sources"
         )
     ]
 )

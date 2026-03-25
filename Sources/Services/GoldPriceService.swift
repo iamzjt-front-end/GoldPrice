@@ -8,7 +8,6 @@ class GoldPriceService: ObservableObject {
     @Published var allSourcePrices: [GoldPriceSource: PriceInfo] = [:]
 
     private var timer: Timer?
-    private let refreshInterval: TimeInterval = 5
     private let historyManager = PriceHistoryManager.shared
 
     init() {}
@@ -17,14 +16,16 @@ class GoldPriceService: ObservableObject {
 
     func startFetching() {
         fetchAllPrices()
-        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            self?.fetchAllPrices()
-        }
+        restartRefreshTimer()
     }
 
     func stopFetching() {
         timer?.invalidate()
         timer = nil
+    }
+
+    func reloadRefreshIntervalFromSettings() {
+        restartRefreshTimer()
     }
 
     func setDataSource(_ source: GoldPriceSource) {
@@ -41,6 +42,15 @@ class GoldPriceService: ObservableObject {
     func forceRefreshAllSources(completion: (() -> Void)? = nil) {
         fetchAllPrices()
         DispatchQueue.main.async { completion?() }
+    }
+
+    private func restartRefreshTimer() {
+        stopFetching()
+        let refreshInterval = historyManager.settings.refreshTimeInterval
+        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+            self?.fetchAllPrices()
+        }
+        NSLog("[GoldPrice] 刷新频率已更新为 \(Int(refreshInterval)) 秒")
     }
 
     // MARK: - Domestic: JD Zheshang
