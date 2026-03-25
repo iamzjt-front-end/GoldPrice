@@ -20,6 +20,9 @@ cp ".build/release/${APP_NAME}" "Build/${APP_NAME}.app/Contents/MacOS/${APP_NAME
 cp Info.plist "Build/${APP_NAME}.app/Contents/Info.plist"
 cp Assets/AppIcon.icns "Build/${APP_NAME}.app/Contents/Resources/${APP_NAME}.icns"
 
+echo "🔏 Ad-hoc 签名..."
+codesign --force --deep --sign - "Build/${APP_NAME}.app"
+
 echo "💿 制作 DMG..."
 mkdir -p "$DMG_STAGING/.background"
 cp -R "Build/${APP_NAME}.app" "$DMG_STAGING/"
@@ -34,10 +37,12 @@ osascript <<APPLESCRIPT
 tell application "Finder"
     tell disk "$DMG_VOLUME"
         open
+        delay 2
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
         set bounds of container window to {100, 100, 820, 580}
+        delay 1
         set theViewOptions to icon view options of container window
         set arrangement of theViewOptions to not arranged
         set icon size of theViewOptions to 80
