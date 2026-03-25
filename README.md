@@ -8,10 +8,10 @@ GoldPrice 是一个 macOS 状态栏应用，用于实时显示黄金价格。
 ## 效果展示
 
 - 浅色模式
-![Light](./Assets/Light.png)
+![Light](./Assets/Light.png?v=2)
 
 - 深色模式
-![Dark](./Assets/Dark.png)
+![Dark](./Assets/Dark.png?v=2)
 
 ## 功能特点
 
