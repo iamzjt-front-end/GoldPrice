@@ -5,380 +5,308 @@ import Combine
 class StatusBarController: NSObject, NSMenuDelegate {
     private var statusBar: NSStatusBar
     private var statusItem: NSStatusItem
-    private var popover: NSPopover
     private var dataService: GoldPriceService
     private var statusBarUpdateTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
-    private var sourceMenuItems: [GoldPriceSource: NSMenuItem] = [:]
-    private let shuibeiDetailItemTag = 1001
-    
+    private let historyManager = PriceHistoryManager.shared
+
     override init() {
         statusBar = NSStatusBar.system
-        statusItem = statusBar.statusItem(withLength: 60)  // 设置状态栏固定宽度
-        
-        // 初始化数据服务
+        statusItem = statusBar.statusItem(withLength: NSStatusItem.variableLength)
+
         dataService = GoldPriceService()
-        
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 300, height: 450)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: GoldPriceView(dataService: dataService))
-        
+
         super.init()
-        
-        // 设置状态栏按钮
+
         if let button = statusItem.button {
-            button.title = "G0.00"
-            button.action = #selector(togglePopover(_:))
-            button.target = self
+            let icon = historyManager.settings.statusBarIcon
+            button.title = icon.isEmpty ? "--" : "\(icon) --"
         }
-        
-        dataService.fetchBrandList()
-        setupMenu()
-        
-        // 订阅数据源更新
+
+        statusItem.menu = buildMenu()
+
         dataService.$currentSource
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.setupMenu()
                 self?.updateStatusBarDisplay()
+                self?.statusItem.menu = self?.buildMenu()
             }
             .store(in: &cancellables)
-        
-        // 订阅所有数据源价格更新
+
         dataService.$allSourcePrices
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.updateMenuPrices()
                 self?.updateStatusBarDisplay()
+                self?.statusItem.menu = self?.buildMenu()
             }
             .store(in: &cancellables)
-        
-        // 订阅所有数据源价格可用性更新
-        dataService.$allSourcePriceAvailability
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateMenuPrices()
-                self?.updateStatusBarDisplay()
-            }
-            .store(in: &cancellables)
-            
-        // 订阅水贝详情价格更新
-        dataService.$shuibeiDetailPrices
-            .receive(on: RunLoop.main)
-            .sink { [weak self] prices in
-                self?.updateShuibeiMenuItems(prices)
-            }
-            .store(in: &cancellables)
-        
-        // 开始获取数据
+
         dataService.startFetching()
-        
-        // 启动状态栏实时更新定时器（每100毫秒更新一次，确保实时显示）
         startStatusBarUpdateTimer()
     }
-    
+
     deinit {
         stopStatusBarUpdateTimer()
     }
-    
+
+    // MARK: - Status bar display
+
     private func startStatusBarUpdateTimer() {
-        statusBarUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        statusBarUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.updateStatusBarDisplay()
         }
     }
-    
+
     private func stopStatusBarUpdateTimer() {
         statusBarUpdateTimer?.invalidate()
         statusBarUpdateTimer = nil
     }
-    
+
     private func updateStatusBarDisplay() {
         guard let button = statusItem.button else { return }
-        
-        // 检查当前数据源的价格是否可用
-        let currentSource = dataService.currentSource
-        let isAvailable = dataService.allSourcePriceAvailability[currentSource] ?? false
-        
-        if !isAvailable {
-            button.title = "G0.00"
-        } else if let price = dataService.allSourcePrices[currentSource] {
-            // 京东金融显示小数，其他金店显示整数
-            if currentSource == .jdZsFinance || currentSource == .jdMsFinance { // Apply decimal format to all JD sources
-                button.title = "G\(String(format: "%.2f", price))"
-            } else {
-                button.title = "G\(Int(price))"
+
+        let icon = historyManager.settings.statusBarIcon
+        let prefix = icon.isEmpty ? "" : "\(icon) "
+
+        let source = dataService.currentSource
+        guard let info = dataService.allSourcePrices[source], info.price != "--" else {
+            button.title = "\(prefix)--"
+            return
+        }
+
+        var title = "\(prefix)\(info.formattedPrice)"
+
+        let profitMode = historyManager.settings.profitDisplay
+        if profitMode != .off,
+           let pos = historyManager.position,
+           let posSource = pos.source,
+           let posInfo = dataService.allSourcePrices[posSource],
+           let cp = posInfo.priceDouble {
+            let p = pos.profit(currentPrice: cp)
+            let r = pos.profitRate(currentPrice: cp)
+            let signP = p >= 0 ? "+" : ""
+            let signR = r >= 0 ? "+" : ""
+            switch profitMode {
+            case .amount:
+                title += "  \(signP)\(String(format: "%.2f", p))"
+            case .rate:
+                title += "  \(signR)\(String(format: "%.2f", r))%"
+            case .both:
+                title += "  \(signP)\(String(format: "%.2f", p)) (\(signR)\(String(format: "%.2f", r))%)"
+            case .off:
+                break
             }
-        } else {
-            button.title = "G0.00"
         }
+
+        button.title = title
     }
-    
-    @objc func togglePopover(_ sender: AnyObject?) {
-        if popover.isShown {
-            closePopover(sender)
-        } else {
-            showPopover(sender)
-        }
-    }
-    
-    func showPopover(_ sender: AnyObject?) {
-        if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: NSRectEdge.minY)
-        }
-    }
-    
-    func closePopover(_ sender: AnyObject?) {
-        popover.performClose(sender)
-    }
-    
-    private func setupMenu() {
+
+    // MARK: - Menu
+
+    @discardableResult
+    private func buildMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
 
-        // 数据源子菜单
-        let sourcesMenu = NSMenu()
-        sourcesMenu.delegate = self
-
-        // 添加所有数据源选项（按照枚举顺序）
-        for source in GoldPriceSource.allCases {
-            let sourceItem = NSMenuItem(title: "", action: #selector(selectGoldSource(_:)), keyEquivalent: "")
-            sourceItem.target = self
-            sourceItem.representedObject = source
-            
-            // 设置带样式的标题
-            setMenuItemAttributedTitle(sourceItem, for: source)
-            
-            // 如果当前选中的是这个数据源，则显示选中状态
-            if dataService.currentSource == source {
-                sourceItem.state = NSControl.StateValue.on
-            }
-            sourcesMenu.addItem(sourceItem)
-            
-            // 保存菜单项引用，用于后续更新
-            sourceMenuItems[source] = sourceItem
-            
-            // 在京东系数据源后添加分隔符
-            if source == .jdMsFinance { // Separator after the last JD source
-                sourcesMenu.addItem(NSMenuItem.separator())
-            }
-            
-            // 在水贝黄金后添加分隔符
-            if source == .shuibeiGold {
-                sourcesMenu.addItem(NSMenuItem.separator())
-            }
+        // Domestic
+        addSectionHeader("国内金价", to: menu)
+        for source in GoldPriceSource.domesticSources {
+            menu.addItem(makePriceMenuItem(source: source))
         }
-        
-        // 数据源菜单项
-        let dataSourceItem = NSMenuItem(title: "数据源", action: nil, keyEquivalent: "d")
-        dataSourceItem.submenu = sourcesMenu
-        menu.addItem(dataSourceItem)
-        
+
         menu.addItem(NSMenuItem.separator())
 
-        // 退出选项
+        // International
+        addSectionHeader("国际金价", to: menu)
+        for source in GoldPriceSource.internationalSources {
+            menu.addItem(makePriceMenuItem(source: source))
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Position (我的持仓)
+        menu.addItem(makePositionMenuItem())
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Source picker submenu
+        let pickerMenu = NSMenu()
+        for source in GoldPriceSource.allCases {
+            let item = NSMenuItem(title: source.rawValue, action: #selector(selectDisplaySource(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = source
+            if dataService.currentSource == source {
+                item.state = .on
+            }
+            pickerMenu.addItem(item)
+        }
+        let spacer = NSMenuItem()
+        spacer.view = SubmenuOffsetView()
+        pickerMenu.insertItem(spacer, at: 0)
+        let pickerItem = NSMenuItem(title: "状态栏显示", action: nil, keyEquivalent: "")
+        pickerItem.submenu = pickerMenu
+        menu.addItem(pickerItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Settings (偏好设置)
+        menu.addItem(makeSettingsMenuItem())
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Update time
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm:ss"
+        let timeStr = "更新于 \(timeFormatter.string(from: dataService.lastUpdateTime))"
+        let timeItem = NSMenuItem(title: timeStr, action: nil, keyEquivalent: "")
+        timeItem.isEnabled = false
+        timeItem.attributedTitle = NSAttributedString(string: timeStr, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.tertiaryLabelColor
+        ])
+        menu.addItem(timeItem)
+
+        // Refresh
+        let refreshItem = NSMenuItem(title: "立即刷新", action: #selector(refreshNow), keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Quit
         let quitItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-        
-        // 设置右键菜单
-        statusItem.menu = menu
+
+        return menu
     }
-    
-    @objc func quitApp() {
-        NSApplication.shared.terminate(nil)
+
+    private func addSectionHeader(_ title: String, to menu: NSMenu) {
+        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        header.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ])
+        menu.addItem(header)
     }
-    
-    @objc func selectGoldSource(_ sender: NSMenuItem) {
+
+    private func makePriceMenuItem(source: GoldPriceSource) -> NSMenuItem {
+        let item = NSMenuItem(title: source.rawValue, action: nil, keyEquivalent: "")
+
+        if let info = dataService.allSourcePrices[source], info.price != "--" {
+            let priceView = PriceMenuItemView(source: source, info: info)
+            item.view = priceView
+
+            let chartSubmenu = NSMenu()
+            let records = historyManager.getTodayRecords(for: source.rawValue)
+            let chartView = ChartMenuItemView(source: source, info: info, records: records)
+            let chartMenuItem = NSMenuItem()
+            chartMenuItem.view = chartView
+            chartSubmenu.addItem(chartMenuItem)
+            item.submenu = chartSubmenu
+        } else {
+            let attrTitle = NSMutableAttributedString()
+            attrTitle.append(NSAttributedString(string: source.rawValue, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor
+            ]))
+            attrTitle.append(NSAttributedString(string: "  --", attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]))
+            item.attributedTitle = attrTitle
+        }
+
+        return item
+    }
+
+    private func makePositionMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "我的持仓", action: nil, keyEquivalent: "")
+
+        if let pos = historyManager.position {
+            var currentPrice: Double? = nil
+            if let source = pos.source, let info = dataService.allSourcePrices[source] {
+                currentPrice = info.priceDouble
+            }
+            let displayView = PositionDisplayView(position: pos, currentPrice: currentPrice)
+            item.view = displayView
+        } else {
+            item.attributedTitle = NSAttributedString(string: "我的持仓  未设置 →", attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ])
+        }
+
+        let editorSubmenu = NSMenu()
+        let editorView = PositionEditorView(
+            position: historyManager.position,
+            allSources: GoldPriceSource.domesticSources
+        ) { [weak self] in
+            guard let self = self else { return }
+            self.statusItem.menu?.cancelTracking()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.statusItem.menu = self.buildMenu()
+                if let button = self.statusItem.button {
+                    button.performClick(nil)
+                }
+            }
+        }
+        let editorItem = NSMenuItem()
+        editorItem.view = editorView
+        editorSubmenu.addItem(editorItem)
+        item.submenu = editorSubmenu
+
+        return item
+    }
+
+    private func makeSettingsMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "偏好设置", action: nil, keyEquivalent: "")
+        item.attributedTitle = NSAttributedString(string: "偏好设置", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor.labelColor
+        ])
+
+        let settingsSubmenu = NSMenu()
+        let settingsView = SettingsEditorView { [weak self] in
+            guard let self = self else { return }
+            self.statusItem.menu?.cancelTracking()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.statusItem.menu = self.buildMenu()
+                if let button = self.statusItem.button {
+                    button.performClick(nil)
+                }
+            }
+        }
+        let settingsItem = NSMenuItem()
+        settingsItem.view = settingsView
+        settingsSubmenu.addItem(settingsItem)
+        item.submenu = settingsSubmenu
+
+        return item
+    }
+
+    // MARK: - Actions
+
+    @objc private func selectDisplaySource(_ sender: NSMenuItem) {
         if let source = sender.representedObject as? GoldPriceSource {
             dataService.setDataSource(source)
         }
     }
-    
-    // 获取指定数据源的价格属性字符串
-    private func getPriceAttributedString(for source: GoldPriceSource) -> NSAttributedString {
-        // 定义字体样式
-        let priceFont = NSFont.systemFont(ofSize: 13, weight: .regular)
-        let unitFont = NSFont.systemFont(ofSize: 12, weight: .regular)
-        let priceColor = NSColor.labelColor
-        let unitColor = NSColor.secondaryLabelColor
-        
-        let attributedString = NSMutableAttributedString()
-        
-        // 添加制表符间距
-        attributedString.append(NSAttributedString(string: "\t\t\t"))
-        
-        // 检查价格是否可用
-        if let isAvailable = dataService.allSourcePriceAvailability[source], isAvailable,
-           let price = dataService.allSourcePrices[source] {
-            
-            // 价格数字部分
-            let priceString: String
-            if source == .jdZsFinance || source == .jdMsFinance {
-                priceString = String(format: "%.2f", price)
-            } else {
-                priceString = String(format: "%d", Int(price))
-            }
-            
-            let priceAttr = NSAttributedString(string: priceString, attributes: [
-                .font: priceFont,
-                .foregroundColor: priceColor
-            ])
-            attributedString.append(priceAttr)
-            
-            // 单位部分
-            let unitAttr = NSAttributedString(string: "  元/克", attributes: [
-                .font: unitFont,
-                .foregroundColor: unitColor
-            ])
-            attributedString.append(unitAttr)
-            
-        } else {
-            // 无数据状态
-            let naAttr = NSAttributedString(string: "  0.00 元/克", attributes: [
-                .font: priceFont,
-                .foregroundColor: NSColor.secondaryLabelColor
-            ])
-            attributedString.append(naAttr)
-        }
-        
-        return attributedString
-    }
-    
-    // 设置菜单项的属性标题
-    private func setMenuItemAttributedTitle(_ menuItem: NSMenuItem, for source: GoldPriceSource) {
-        // 定义数据源名称的字体样式
-        let sourceFont = NSFont.systemFont(ofSize: 13, weight: .regular)
-        let sourceColor = NSColor.labelColor
-        
-        let attributedTitle = NSMutableAttributedString()
-        
-        // 数据源名称部分
-        let sourceAttr = NSAttributedString(string: source.rawValue, attributes: [
-            .font: sourceFont,
-            .foregroundColor: sourceColor
-        ])
-        attributedTitle.append(sourceAttr)
-        
-        // 价格部分
-        let priceAttr = getPriceAttributedString(for: source)
-        attributedTitle.append(priceAttr)
-        
-        menuItem.attributedTitle = attributedTitle
-    }
-    
-    // 更新水贝相关菜单项（平级显示）
-    private func updateShuibeiMenuItems(_ prices: [ShuibeiMarketPrice]) {
-        guard let menu = statusItem.menu,
-              let dataSourceItem = menu.item(withTitle: "数据源"),
-              let sourcesMenu = dataSourceItem.submenu else { return }
-        
-        // 1. 清理旧的详情项
-        // 先收集需要删除的项，避免在遍历时修改集合
-        let itemsToRemove = sourcesMenu.items.filter { $0.tag == shuibeiDetailItemTag }
-        for item in itemsToRemove {
-            sourcesMenu.removeItem(item)
-        }
-        
-        // 2. 如果没有数据，直接返回
-        if prices.isEmpty { return }
-        
-        // 3. 找到“水贝黄金”菜单项的位置
-        // sourceMenuItems 存储了所有枚举对应的菜单项
-        guard let shuibeiItem = sourceMenuItems[.shuibeiGold] else { return }
-        let shuibeiIndex = sourcesMenu.index(of: shuibeiItem)
-        
-        guard shuibeiIndex >= 0 else { return }
-        
-        // 4. 在“水贝黄金”后面插入详情项
-        // 插入位置从水贝黄金的下一项开始
-        var insertIndex = shuibeiIndex + 1
-        
-        // 添加各个市场的价格
-        for price in prices {
-            // 使用制表符对齐
-            let namePart = "    \(price.name)"
-            let pricePart = "\(Int(price.price)) 元/克"
-            
-            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            item.tag = shuibeiDetailItemTag
-            item.isEnabled = false // 纯展示，不可点击
-            
-            // 设置样式，使其看起来像附属项
-            let attrTitle = NSMutableAttributedString()
-            
-            // 名字部分
-            attrTitle.append(NSAttributedString(string: namePart, attributes: [
-                .font: NSFont.systemFont(ofSize: 12),
-                .foregroundColor: NSColor.secondaryLabelColor
-            ]))
-            
-            // 间距部分（使用多个制表符以确保右对齐效果）
-            attrTitle.append(NSAttributedString(string: "\t\t"))
-            
-            // 价格部分
-            attrTitle.append(NSAttributedString(string: pricePart, attributes: [
-                .font: NSFont.systemFont(ofSize: 12),
-                .foregroundColor: NSColor.secondaryLabelColor
-            ]))
-            
-            item.attributedTitle = attrTitle
-            
-            sourcesMenu.insertItem(item, at: insertIndex)
-            insertIndex += 1
-        }
-        
-        // 添加更新时间
-        if let first = prices.first {
-            let timeTitle = "    更新时间: \(first.time)"
-            let timeItem = NSMenuItem(title: timeTitle, action: nil, keyEquivalent: "")
-            timeItem.tag = shuibeiDetailItemTag
-            timeItem.isEnabled = false
-            
-            let attrTimeTitle = NSMutableAttributedString(string: timeTitle)
-            attrTimeTitle.addAttributes([
-                .font: NSFont.systemFont(ofSize: 12),
-                .foregroundColor: NSColor.tertiaryLabelColor
-            ], range: NSRange(location: 0, length: timeTitle.count))
-            timeItem.attributedTitle = attrTimeTitle
-            
-            sourcesMenu.insertItem(timeItem, at: insertIndex)
-        }
-    }
-    
-    // 更新菜单中的价格显示
-    private func updateMenuPrices() {
-        for (source, menuItem) in sourceMenuItems {
-            setMenuItemAttributedTitle(menuItem, for: source)
-        }
-    }
-    
-    // MARK: - NSMenuDelegate
-    func menuWillOpen(_ menu: NSMenu) {
-        // 当数据源菜单打开时，立即刷新一次数据并更新菜单显示
-        if menu == statusItem.menu?.item(withTitle: "数据源")?.submenu {
-            print("数据源菜单打开，立即刷新数据")
-            
-            // 立即更新一次菜单显示（显示当前缓存的数据）
-            updateMenuPrices()
-            
-            // 开始刷新数据
-            dataService.forceRefreshAllSources()
-            
-            // 延迟一小段时间后再次更新菜单，让新数据有时间加载
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.updateMenuPrices()
-            }
-            
-            // 再延迟一点时间再次更新（处理较慢的网络请求）
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.updateMenuPrices()
-            }
-        }
-    }
-    
-    func menuDidClose(_ menu: NSMenu) {
-        // 菜单关闭后可以进行一些清理工作（如果需要）
+
+    @objc private func refreshNow() {
+        dataService.forceRefreshAllSources()
     }
 
+    @objc func quitApp() {
+        NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        dataService.forceRefreshAllSources()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {}
 }

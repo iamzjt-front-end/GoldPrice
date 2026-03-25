@@ -2,183 +2,233 @@ import SwiftUI
 
 struct GoldPriceView: View {
     @ObservedObject var dataService: GoldPriceService
-    private let dateFormatter: DateFormatter
-    
-    init(dataService: GoldPriceService) {
-        self.dataService = dataService
-        
-        // 初始化日期格式化器
-        dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    }
-    
+    @State private var hoveredSource: GoldPriceSource?
+    private let historyManager = PriceHistoryManager.shared
+
+    private let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // 标题
-            Text("黄金价格")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.black)
+        VStack(spacing: 0) {
+            Text("黄金价格监控")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 8)
-            
+                .padding(.vertical, 10)
+
             Divider()
-            
-            // 价格信息
-            HStack {
-                Text("当前价格:")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-                
-                Spacer()
-                
-                if let isAvailable = dataService.allSourcePriceAvailability[dataService.currentSource], 
-                   isAvailable,
-                   let price = dataService.allSourcePrices[dataService.currentSource] {
-                    // 根据数据源类型决定显示格式，界面中不需要固定宽度
-                    let formatString = dataService.currentSource == .jdZsFinance || dataService.currentSource == .jdMsFinance ? "G%.2f" : "G%.0f"
-                    Text(String(format: formatString, price))
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.black)
-                } else {
-                    Text("G0.00")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.gray)
-                }
-            }
-            .padding(.horizontal, 16)
-            
-            // 数据源信息
-            HStack {
-                Text("数据来源:")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-                
-                Spacer()
-                
-                Text(dataService.currentSource.rawValue)
-                    .font(.system(size: 14))
-                    .foregroundColor(.black)
-            }
-            .padding(.horizontal, 16)
-            
-            // 更新时间
-            HStack {
-                Text("更新时间:")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-                
-                Spacer()
-                
-                Text(dateFormatter.string(from: dataService.lastUpdateTime))
-                    .font(.system(size: 14))
-                    .foregroundColor(.black)
-            }
-            .padding(.horizontal, 16)
-            
-            if dataService.currentSource == .shuibeiGold && !dataService.shuibeiDetailPrices.isEmpty {
-                Divider()
-                
-                Text("水贝市场详情:")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-                    .padding(.horizontal, 16)
-                    
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(dataService.shuibeiDetailPrices) { item in
-                            HStack {
-                                Text(item.name)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.black)
-                                Spacer()
-                                Text("\(Int(item.price))")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(.black)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 2)
-                        }
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    sectionHeader("国内金价")
+
+                    ForEach(GoldPriceSource.domesticSources, id: \.self) { source in
+                        priceRow(source: source)
                     }
-                }
-                .frame(maxHeight: 100)
-            }
-            
-            Divider()
-            
-            // 数据源选择
-            Text("切换数据源:")
-                .font(.system(size: 14))
-                .foregroundColor(.gray)
-                .padding(.horizontal, 16)
-            
-            ScrollView {
-                LazyVStack(spacing: 4) {
-                    ForEach(GoldPriceSource.allCases, id: \.self) { source in
-                        Button(action: {
-                            dataService.setDataSource(source)
-                        }) {
-                            HStack {
-                                Text(source.rawValue)
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.black)
-                                
-                                Spacer()
-                                
-                                if dataService.currentSource == source {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.blue)
-                                }
+
+                    Divider().padding(.vertical, 4)
+
+                    sectionHeader("国际金价")
+
+                    ForEach(GoldPriceSource.internationalSources, id: \.self) { source in
+                        priceRow(source: source)
+                    }
+
+                    Divider().padding(.vertical, 4)
+
+                    // Source picker
+                    HStack(spacing: 6) {
+                        Text("状态栏显示:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+
+                        Picker("", selection: $dataService.currentSource) {
+                            ForEach(GoldPriceSource.allCases, id: \.self) { source in
+                                Text(source.rawValue).tag(source)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(dataService.currentSource == source ? Color.blue.opacity(0.1) : Color.clear)
-                            .cornerRadius(4)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .scaleEffect(0.85, anchor: .leading)
+                        .frame(height: 20)
+
+                        Spacer()
+
+                        Button(action: { dataService.fetchAllPrices() }) {
+                            HStack(spacing: 4) {
+                                if dataService.isLoading {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 11))
+                                }
+                                Text("刷新")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundColor(.blue)
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
-                }
-            }
-            .frame(maxHeight: 200)
-            
-            Spacer()
-            
-            // 刷新按钮
-            Button(action: {
-                dataService.fetchGoldPrice()
-            }) {
-                HStack {
-                    Spacer()
-                    
-                    if dataService.isLoading {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .padding(.trailing, 8)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundColor(.white)
-                            .padding(.trailing, 8)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+
+                    HStack {
+                        Text("更新于 \(dateFormatter.string(from: dataService.lastUpdateTime))")
+                            .font(.system(size: 10))
+                            .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                        Spacer()
                     }
-                    
-                    Text("刷新")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                    
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+        .frame(width: 300, height: 520)
+    }
+
+    // MARK: - Components
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+    }
+
+    private func priceRow(source: GoldPriceSource) -> some View {
+        let info = dataService.allSourcePrices[source]
+        let hasData = info != nil && info?.price != "--"
+        let isHovered = hoveredSource == source
+
+        return VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
+                Text(source.rawValue)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .frame(width: 60, alignment: .leading)
+
+                Spacer()
+
+                if let info = info, hasData {
+                    Text(info.formattedPrice)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.primary)
+
+                    Text(source.unit)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 2)
+
+                    Spacer().frame(width: 8)
+
+                    if !info.changeRate.isEmpty {
+                        HStack(spacing: 2) {
+                            Text(info.changeIcon)
+                                .font(.system(size: 10))
+                            Text(info.changeRate)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(info.isUp ? .red : .goldGreen)
+                        }
+                    }
+                } else {
+                    Text("--")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 5)
+            .background(isHovered ? Color.primary.opacity(0.05) : Color.clear)
+            .cornerRadius(4)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    hoveredSource = hovering ? source : nil
+                }
+            }
+
+            if isHovered, let info = info, hasData {
+                chartPanel(source: source, info: info)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func chartPanel(source: GoldPriceSource, info: PriceInfo) -> some View {
+        let records = historyManager.getTodayRecords(for: source.rawValue)
+
+        return VStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(info.formattedPrice)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.primary)
+
+                Text(source.unit)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if !info.changeRate.isEmpty {
+                    HStack(spacing: 3) {
+                        Text(info.isUp ? "↑" : "↓")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(info.isUp ? .red : .goldGreen)
+                        Text(info.changeRate)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(info.isUp ? .red : .goldGreen)
+                    }
+                }
+            }
+
+            if info.dayHigh != "--" && info.dayLow != "--" {
+                HStack(spacing: 12) {
+                    HStack(spacing: 2) {
+                        Text("高")
+                            .font(.system(size: 10))
+                            .foregroundColor(.red.opacity(0.7))
+                        Text(info.dayHigh)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    HStack(spacing: 2) {
+                        Text("低")
+                            .font(.system(size: 10))
+                            .foregroundColor(.goldGreen.opacity(0.7))
+                        Text(info.dayLow)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                 }
-                .padding(.vertical, 8)
-                .background(Color.blue)
-                .cornerRadius(8)
-                .padding(.horizontal, 16)
             }
-            .buttonStyle(PlainButtonStyle())
-            .padding(.bottom, 16)
+
+            if records.count >= 2 {
+                MiniChartView(records: records, isUp: info.isUp)
+            } else {
+                Text("数据积累中...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(height: 40)
+            }
         }
-        .frame(width: 300, height: 450)
-        .background(Color.white)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
 }
 
-// 预览
 struct GoldPriceView_Previews: PreviewProvider {
     static var previews: some View {
         GoldPriceView(dataService: GoldPriceService())
