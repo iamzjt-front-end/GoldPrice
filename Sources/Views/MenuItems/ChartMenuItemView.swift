@@ -25,22 +25,14 @@ class SubmenuOffsetView: NSView {
 }
 
 class ChartMenuItemView: NSView {
-    private let source: GoldPriceSource
-    private let info: PriceInfo
-    private let records: [PriceRecord]
-
-    private let viewWidth: CGFloat = 260
-    private let viewHeight: CGFloat = 180
+    private let hostingView: NSHostingView<ChartPanelContent>
 
     init(source: GoldPriceSource, info: PriceInfo, records: [PriceRecord]) {
-        self.source = source
-        self.info = info
-        self.records = records
-        super.init(frame: .zero)
-
-        let hostingView = NSHostingView(rootView: ChartPanelContent(
+        self.hostingView = NSHostingView(rootView: ChartPanelContent(
             source: source, info: info, records: records
         ))
+        super.init(frame: .zero)
+
         let fittingSize = hostingView.fittingSize
         self.frame = NSRect(x: 0, y: 0, width: fittingSize.width, height: fittingSize.height)
         hostingView.frame = bounds
@@ -57,6 +49,14 @@ class ChartMenuItemView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    func update(source: GoldPriceSource, info: PriceInfo, records: [PriceRecord]) {
+        hostingView.rootView = ChartPanelContent(source: source, info: info, records: records)
+        let fittingSize = hostingView.fittingSize
+        frame.size = NSSize(width: fittingSize.width, height: fittingSize.height)
+        hostingView.frame = bounds
+        needsDisplay = true
+    }
 }
 
 private struct ChartPanelContent: View {
@@ -123,7 +123,14 @@ private struct ChartPanelContent: View {
             }
 
             if records.count >= 2 {
-                MiniChartView(records: records, isUp: info.isUp)
+                MiniChartView(
+                    records: records,
+                    isUp: info.isUp,
+                    hoverValueFormatter: { value in
+                        "\(String(format: "%.2f", value)) \(source.unit)"
+                    },
+                    currentHintText: "\(info.formattedPrice) \(source.unit)"
+                )
             } else {
                 Text("数据积累中...")
                     .font(.system(size: 10))

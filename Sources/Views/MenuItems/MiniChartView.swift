@@ -6,11 +6,16 @@ private extension Color {
     static let chartTipLow = Color(red: 99 / 255, green: 171 / 255, blue: 142 / 255)
 }
 
-private struct TrendRecord: Identifiable {
+private struct TrendRecord: Identifiable, Equatable {
     let timestamp: Date
     let value: Double
 
     var id: TimeInterval { timestamp.timeIntervalSince1970 }
+}
+
+private struct HoverSelection: Equatable {
+    let timestamp: Date
+    let value: Double
 }
 
 private func emaSmooth(_ values: [Double], alpha: Double) -> [Double] {
@@ -67,41 +72,25 @@ private func buildTrendRecords(from records: [PriceRecord]) -> [TrendRecord] {
     return deduplicated.values.sorted { $0.timestamp < $1.timestamp }
 }
 
-struct MiniChartView: View {
-    let records: [PriceRecord]
-    let isUp: Bool
+private struct ChartStaticShape: View, Equatable {
+    let trendRecords: [TrendRecord]
+    let minRecord: TrendRecord?
+    let maxRecord: TrendRecord?
+    let lastTrendRecord: TrendRecord?
+    let yDomain: ClosedRange<Double>
+    let xMarks: [Date]
+    let lineColor: Color
+    let currentHintText: String
 
-    private var trendRecords: [TrendRecord] {
-        buildTrendRecords(from: records)
-    }
-
-    private var prices: [Double] {
-        records.map(\.price)
-    }
-
-    private var minRecord: PriceRecord? {
-        records.min(by: { $0.price < $1.price })
-    }
-
-    private var maxRecord: PriceRecord? {
-        records.max(by: { $0.price < $1.price })
-    }
-
-    private var yDomain: ClosedRange<Double> {
-        let minValue = prices.min() ?? 0
-        let maxValue = prices.max() ?? 1
-        let padding = max((maxValue - minValue) * 0.12, 0.5)
-        return (minValue - padding)...(maxValue + padding)
-    }
-
-    private var xMarks: [Date] {
-        guard let first = records.first?.timestamp, let last = records.last?.timestamp else { return [] }
-        let middle = records[records.count / 2].timestamp
-        return [first, middle, last]
-    }
-
-    private var lineColor: Color {
-        isUp ? .red : .goldGreen
+    static func == (lhs: ChartStaticShape, rhs: ChartStaticShape) -> Bool {
+        lhs.trendRecords == rhs.trendRecords &&
+        lhs.minRecord == rhs.minRecord &&
+        lhs.maxRecord == rhs.maxRecord &&
+        lhs.lastTrendRecord == rhs.lastTrendRecord &&
+        lhs.yDomain.lowerBound == rhs.yDomain.lowerBound &&
+        lhs.yDomain.upperBound == rhs.yDomain.upperBound &&
+        lhs.xMarks == rhs.xMarks &&
+        lhs.currentHintText == rhs.currentHintText
     }
 
     var body: some View {
@@ -135,24 +124,36 @@ struct MiniChartView: View {
             if let maxRecord {
                 PointMark(
                     x: .value("High Time", maxRecord.timestamp),
-                    y: .value("High Value", maxRecord.price)
+                    y: .value("High Value", maxRecord.value)
                 )
                 .symbolSize(42)
                 .foregroundStyle(Color.chartTipHigh)
                 .annotation(position: .top, spacing: 8) {
-                    tipLabel(text: String(format: "%.2f", maxRecord.price), color: .chartTipHigh)
+                    tipLabel(text: String(format: "%.2f", maxRecord.value), color: .chartTipHigh)
                 }
             }
 
             if let minRecord {
                 PointMark(
                     x: .value("Low Time", minRecord.timestamp),
-                    y: .value("Low Value", minRecord.price)
+                    y: .value("Low Value", minRecord.value)
                 )
                 .symbolSize(42)
                 .foregroundStyle(Color.chartTipLow)
                 .annotation(position: .bottom, spacing: 8) {
-                    tipLabel(text: String(format: "%.2f", minRecord.price), color: .chartTipLow)
+                    tipLabel(text: String(format: "%.2f", minRecord.value), color: .chartTipLow)
+                }
+            }
+
+            if let lastTrendRecord {
+                PointMark(
+                    x: .value("Current Time", lastTrendRecord.timestamp),
+                    y: .value("Current Value", lastTrendRecord.value)
+                )
+                .symbolSize(1)
+                .foregroundStyle(Color.clear)
+                .annotation(position: .trailing, spacing: 6) {
+                    weakHintLabel(text: currentHintText, color: lineColor)
                 }
             }
         }
@@ -185,7 +186,6 @@ struct MiniChartView: View {
                 .padding(.bottom, 4)
                 .background(Color.clear)
         }
-        .frame(height: 128)
     }
 
     private func tipLabel(text: String, color: Color) -> some View {
@@ -196,5 +196,209 @@ struct MiniChartView: View {
             .padding(.vertical, 3)
             .background(color)
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+
+    private func weakHintLabel(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .medium, design: .monospaced))
+            .foregroundColor(color.opacity(0.78))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+}
+
+struct MiniChartView: View {
+    let records: [PriceRecord]
+    let isUp: Bool
+    let hoverValueFormatter: (Double) -> String
+    let currentHintText: String
+
+    private let trendRecords: [TrendRecord]
+    private let minRecord: TrendRecord?
+    private let maxRecord: TrendRecord?
+    private let lastTrendRecord: TrendRecord?
+    private let yDomain: ClosedRange<Double>
+    private let xMarks: [Date]
+    private let lineColor: Color
+
+    @State private var hoverSelection: HoverSelection?
+
+    init(
+        records: [PriceRecord],
+        isUp: Bool,
+        hoverValueFormatter: @escaping (Double) -> String,
+        currentHintText: String
+    ) {
+        self.records = records
+        self.isUp = isUp
+        self.hoverValueFormatter = hoverValueFormatter
+        self.currentHintText = currentHintText
+
+        let trendRecords = buildTrendRecords(from: records)
+        self.trendRecords = trendRecords
+
+        let minRecord = records.min(by: { $0.price < $1.price }).map {
+            TrendRecord(timestamp: $0.timestamp, value: $0.price)
+        }
+        let maxRecord = records.max(by: { $0.price < $1.price }).map {
+            TrendRecord(timestamp: $0.timestamp, value: $0.price)
+        }
+        self.minRecord = minRecord
+        self.maxRecord = maxRecord
+        self.lastTrendRecord = trendRecords.last
+
+        let prices = records.map(\.price)
+        let minValue = prices.min() ?? 0
+        let maxValue = prices.max() ?? 1
+        let padding = max((maxValue - minValue) * 0.12, 0.5)
+        self.yDomain = (minValue - padding)...(maxValue + padding)
+
+        if let first = records.first?.timestamp, let last = records.last?.timestamp {
+            let middle = records[records.count / 2].timestamp
+            self.xMarks = [first, middle, last]
+        } else {
+            self.xMarks = []
+        }
+
+        self.lineColor = isUp ? .red : .goldGreen
+    }
+
+    var body: some View {
+        ChartStaticShape(
+            trendRecords: trendRecords,
+            minRecord: minRecord,
+            maxRecord: maxRecord,
+            lastTrendRecord: lastTrendRecord,
+            yDomain: yDomain,
+            xMarks: xMarks,
+            lineColor: lineColor,
+            currentHintText: currentHintText
+        )
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                let plotFrame = geometry[proxy.plotAreaFrame]
+
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                guard plotFrame.contains(location) else {
+                                    hoverSelection = nil
+                                    return
+                                }
+
+                                let relativeX = location.x - plotFrame.origin.x
+                                guard let hoveredDate = proxy.value(atX: relativeX, as: Date.self),
+                                      let nextSelection = interpolatedSelection(for: hoveredDate) else {
+                                    hoverSelection = nil
+                                    return
+                                }
+
+                                if shouldUpdateHoverSelection(to: nextSelection) {
+                                    hoverSelection = nextSelection
+                                }
+                            case .ended:
+                                hoverSelection = nil
+                            }
+                        }
+
+                    if let hoverSelection,
+                       let x = proxy.position(forX: hoverSelection.timestamp),
+                       let y = proxy.position(forY: hoverSelection.value) {
+                        let chartX = plotFrame.origin.x + x
+                        let chartY = plotFrame.origin.y + y
+                        let tooltipY = chartY < plotFrame.midY ? chartY + 28 : chartY - 28
+                        let clampedTooltipX = min(max(chartX, plotFrame.minX + 52), plotFrame.maxX - 52)
+
+                        Path { path in
+                            path.move(to: CGPoint(x: chartX, y: plotFrame.minY))
+                            path.addLine(to: CGPoint(x: chartX, y: plotFrame.maxY))
+                        }
+                        .stroke(Color.primary.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .allowsHitTesting(false)
+
+                        Circle()
+                            .fill(lineColor)
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.9), lineWidth: 2)
+                            )
+                            .position(x: chartX, y: chartY)
+                            .allowsHitTesting(false)
+
+                        hoverLabel(timestamp: hoverSelection.timestamp, valueText: hoverValueFormatter(hoverSelection.value))
+                            .position(x: clampedTooltipX, y: tooltipY)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+            }
+        }
+        .frame(height: 128)
+    }
+
+    private func shouldUpdateHoverSelection(to nextSelection: HoverSelection) -> Bool {
+        guard let current = hoverSelection else { return true }
+        let timeDelta = abs(current.timestamp.timeIntervalSince(nextSelection.timestamp))
+        let valueDelta = abs(current.value - nextSelection.value)
+        let valueThreshold = max((yDomain.upperBound - yDomain.lowerBound) / 220, 0.02)
+        return timeDelta > 2 || valueDelta > valueThreshold
+    }
+
+    private func interpolatedSelection(for date: Date) -> HoverSelection? {
+        guard let first = trendRecords.first, let last = trendRecords.last else { return nil }
+
+        if date <= first.timestamp {
+            return HoverSelection(timestamp: first.timestamp, value: first.value)
+        }
+        if date >= last.timestamp {
+            return HoverSelection(timestamp: last.timestamp, value: last.value)
+        }
+
+        for index in 1..<trendRecords.count {
+            let upper = trendRecords[index]
+            let lower = trendRecords[index - 1]
+
+            if date <= upper.timestamp {
+                let total = upper.timestamp.timeIntervalSince(lower.timestamp)
+                guard total > 0 else {
+                    return HoverSelection(timestamp: upper.timestamp, value: upper.value)
+                }
+
+                let progress = date.timeIntervalSince(lower.timestamp) / total
+                let value = lower.value + (upper.value - lower.value) * progress
+                return HoverSelection(timestamp: date, value: value)
+            }
+        }
+
+        return HoverSelection(timestamp: last.timestamp, value: last.value)
+    }
+
+    private func hoverLabel(timestamp: Date, valueText: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(timestamp, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+
+            Text(valueText)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(Color(NSColor.windowBackgroundColor).opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
     }
 }

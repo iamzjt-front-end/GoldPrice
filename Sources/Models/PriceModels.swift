@@ -83,20 +83,28 @@ struct AppSettings: Codable, Equatable {
         case statusBarIcon
         case profitDisplay
         case refreshInterval
+        case defaultAlertRepeatMode
+        case defaultAlertRepeatInterval
     }
 
     var statusBarIcon: String = "🌕"
     var profitDisplay: ProfitDisplayMode = .off
     var refreshInterval: Int = 5
+    var defaultAlertRepeatMode: AlertRepeatMode = .recurring
+    var defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
 
     init(
         statusBarIcon: String = "🌕",
         profitDisplay: ProfitDisplayMode = .off,
-        refreshInterval: Int = 5
+        refreshInterval: Int = 5,
+        defaultAlertRepeatMode: AlertRepeatMode = .recurring,
+        defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
     ) {
         self.statusBarIcon = statusBarIcon
         self.profitDisplay = profitDisplay
         self.refreshInterval = max(1, refreshInterval)
+        self.defaultAlertRepeatMode = defaultAlertRepeatMode
+        self.defaultAlertRepeatInterval = defaultAlertRepeatInterval
     }
 
     var refreshTimeInterval: TimeInterval {
@@ -108,6 +116,8 @@ struct AppSettings: Codable, Equatable {
         statusBarIcon = try container.decodeIfPresent(String.self, forKey: .statusBarIcon) ?? "🌕"
         profitDisplay = try container.decodeIfPresent(ProfitDisplayMode.self, forKey: .profitDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
+        defaultAlertRepeatMode = try container.decodeIfPresent(AlertRepeatMode.self, forKey: .defaultAlertRepeatMode) ?? .recurring
+        defaultAlertRepeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .defaultAlertRepeatInterval) ?? .fiveMinutes
     }
 
     func encode(to encoder: Encoder) throws {
@@ -115,6 +125,8 @@ struct AppSettings: Codable, Equatable {
         try container.encode(statusBarIcon, forKey: .statusBarIcon)
         try container.encode(profitDisplay, forKey: .profitDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
+        try container.encode(defaultAlertRepeatMode, forKey: .defaultAlertRepeatMode)
+        try container.encode(defaultAlertRepeatInterval, forKey: .defaultAlertRepeatInterval)
     }
 }
 
@@ -123,6 +135,13 @@ struct AppSettings: Codable, Equatable {
 enum AlertCondition: String, Codable, CaseIterable {
     case above = "高于"
     case below = "低于"
+
+    var displayText: String {
+        switch self {
+        case .above: return "＞"
+        case .below: return "＜"
+        }
+    }
 }
 
 enum AlertRepeatMode: String, Codable, CaseIterable {
@@ -177,8 +196,8 @@ struct PriceAlert: Codable, Equatable {
     var condition: AlertCondition
     var targetPrice: Double
     var triggered: Bool = false
-    var repeatMode: AlertRepeatMode = .rearmOnCross
-    var repeatInterval: AlertRepeatInterval = .fifteenMinutes
+    var repeatMode: AlertRepeatMode = .recurring
+    var repeatInterval: AlertRepeatInterval = .fiveMinutes
     var lastTriggeredAt: Date? = nil
     var wasConditionMet: Bool = false
 
@@ -188,8 +207,8 @@ struct PriceAlert: Codable, Equatable {
         condition: AlertCondition,
         targetPrice: Double,
         triggered: Bool = false,
-        repeatMode: AlertRepeatMode = .rearmOnCross,
-        repeatInterval: AlertRepeatInterval = .fifteenMinutes,
+        repeatMode: AlertRepeatMode = .recurring,
+        repeatInterval: AlertRepeatInterval = .fiveMinutes,
         lastTriggeredAt: Date? = nil,
         wasConditionMet: Bool = false
     ) {
@@ -231,8 +250,8 @@ struct PriceAlert: Codable, Equatable {
         condition = try container.decode(AlertCondition.self, forKey: .condition)
         targetPrice = try container.decode(Double.self, forKey: .targetPrice)
         triggered = try container.decodeIfPresent(Bool.self, forKey: .triggered) ?? false
-        repeatMode = try container.decodeIfPresent(AlertRepeatMode.self, forKey: .repeatMode) ?? .rearmOnCross
-        repeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .repeatInterval) ?? .fifteenMinutes
+        repeatMode = try container.decodeIfPresent(AlertRepeatMode.self, forKey: .repeatMode) ?? .recurring
+        repeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .repeatInterval) ?? .fiveMinutes
         lastTriggeredAt = try container.decodeIfPresent(Date.self, forKey: .lastTriggeredAt)
         wasConditionMet = try container.decodeIfPresent(Bool.self, forKey: .wasConditionMet) ?? false
     }

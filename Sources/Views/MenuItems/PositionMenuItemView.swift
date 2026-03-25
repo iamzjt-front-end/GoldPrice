@@ -82,39 +82,111 @@ private func segmentedPicker<T: Hashable>(
 // MARK: - Main menu row (read-only display)
 
 class PositionDisplayView: NSView {
-    init(position: PositionInfo, currentPrice: Double?) {
-        super.init(frame: .zero)
+    private let titleLabel = NSTextField(labelWithString: "我的持仓")
+    private let gramsLabel = NSTextField(labelWithString: "")
+    private let avgPriceLabel = NSTextField(labelWithString: "")
+    private let profitLabel = NSTextField(labelWithString: "")
+    private let rateLabel = NSTextField(labelWithString: "")
+    private let trailingStack = NSStackView()
 
-        let hostingView = NSHostingView(rootView: PositionDisplayContent(
-            position: position, currentPrice: currentPrice
-        ))
-        let size = hostingView.fittingSize
-        self.frame = NSRect(x: 0, y: 0, width: max(size.width, 280), height: size.height)
-        hostingView.frame = bounds
-        hostingView.autoresizingMask = [.width, .height]
-        addSubview(hostingView)
+    init(position: PositionInfo, currentPrice: Double?) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 50))
+        setupView()
+        update(position: position, currentPrice: currentPrice)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    func update(position: PositionInfo, currentPrice: Double?) {
+        gramsLabel.stringValue = "\(String(format: "%.2f", position.grams))克"
+        avgPriceLabel.stringValue = "均价 \(String(format: "%.2f", position.avgPrice)) 元/克"
+
+        if let currentPrice {
+            let profit = position.profit(currentPrice: currentPrice)
+            let rate = position.profitRate(currentPrice: currentPrice)
+            let color = profit >= 0 ? NSColor.systemRed : .goldGreen
+            profitLabel.stringValue = "\(profit >= 0 ? "+" : "")\(String(format: "%.2f", profit))元"
+            rateLabel.stringValue = "\(profit >= 0 ? "+" : "")\(String(format: "%.2f", rate))%"
+            profitLabel.textColor = color
+            rateLabel.textColor = color
+            trailingStack.isHidden = false
+        } else {
+            trailingStack.isHidden = true
+        }
+
+        needsDisplay = true
+    }
+
+    private func setupView() {
+        titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        titleLabel.textColor = .secondaryLabelColor
+
+        gramsLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        gramsLabel.textColor = .labelColor
+
+        avgPriceLabel.font = .systemFont(ofSize: 11)
+        avgPriceLabel.textColor = .secondaryLabelColor
+
+        profitLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .bold)
+        rateLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+
+        let leftMetaStack = NSStackView(views: [gramsLabel, avgPriceLabel])
+        leftMetaStack.orientation = .horizontal
+        leftMetaStack.alignment = .centerY
+        leftMetaStack.spacing = 6
+
+        let leftStack = NSStackView(views: [titleLabel, leftMetaStack])
+        leftStack.orientation = .vertical
+        leftStack.alignment = .leading
+        leftStack.spacing = 2
+
+        trailingStack.orientation = .vertical
+        trailingStack.alignment = .trailing
+        trailingStack.spacing = 2
+        trailingStack.addArrangedSubview(profitLabel)
+        trailingStack.addArrangedSubview(rateLabel)
+
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let container = NSStackView(views: [leftStack, spacer, trailingStack])
+        container.orientation = .horizontal
+        container.alignment = .centerY
+        container.spacing = 8
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(container)
+
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 280),
+            heightAnchor.constraint(equalToConstant: 50),
+            container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+        ])
+    }
 }
 
 class PositionChartMenuItemView: NSView {
-    init(position: PositionInfo, currentPrice: Double, records: [PriceRecord]) {
-        super.init(frame: .zero)
+    private let hostingView: NSHostingView<PositionChartPanelContent>
 
+    init(position: PositionInfo, currentPrice: Double, records: [PriceRecord]) {
         let profitRecords = records.map { record in
             PriceRecord(timestamp: record.timestamp, price: position.profit(currentPrice: record.price))
         }
         let currentProfit = position.profit(currentPrice: currentPrice)
         let currentRate = position.profitRate(currentPrice: currentPrice)
 
-        let hostingView = NSHostingView(rootView: PositionChartPanelContent(
+        self.hostingView = NSHostingView(rootView: PositionChartPanelContent(
             position: position,
             currentPrice: currentPrice,
             currentProfit: currentProfit,
             currentRate: currentRate,
             profitRecords: profitRecords
         ))
+        super.init(frame: .zero)
         let fittingSize = hostingView.fittingSize
         self.frame = NSRect(x: 0, y: 0, width: fittingSize.width, height: fittingSize.height)
         hostingView.frame = bounds
@@ -122,6 +194,27 @@ class PositionChartMenuItemView: NSView {
         addSubview(hostingView)
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    func update(position: PositionInfo, currentPrice: Double, records: [PriceRecord]) {
+        let profitRecords = records.map { record in
+            PriceRecord(timestamp: record.timestamp, price: position.profit(currentPrice: record.price))
+        }
+        let currentProfit = position.profit(currentPrice: currentPrice)
+        let currentRate = position.profitRate(currentPrice: currentPrice)
+
+        hostingView.rootView = PositionChartPanelContent(
+            position: position,
+            currentPrice: currentPrice,
+            currentProfit: currentProfit,
+            currentRate: currentRate,
+            profitRecords: profitRecords
+        )
+
+        let fittingSize = hostingView.fittingSize
+        frame.size = NSSize(width: fittingSize.width, height: fittingSize.height)
+        hostingView.frame = bounds
+        needsDisplay = true
+    }
 }
 
 private struct PositionDisplayContent: View {
@@ -195,8 +288,7 @@ private struct PositionChartPanelContent: View {
     let profitRecords: [PriceRecord]
 
     private var isUp: Bool {
-        guard let first = profitRecords.first?.price else { return currentProfit >= 0 }
-        return currentProfit >= first
+        currentProfit >= 0
     }
 
     private var profitColor: Color {
@@ -272,7 +364,14 @@ private struct PositionChartPanelContent: View {
             }
 
             if profitRecords.count >= 2 {
-                MiniChartView(records: profitRecords, isUp: isUp)
+                MiniChartView(
+                    records: profitRecords,
+                    isUp: isUp,
+                    hoverValueFormatter: { value in
+                        "\(value >= 0 ? "+" : "")\(String(format: "%.2f", value)) 元"
+                    },
+                    currentHintText: "\(currentProfit >= 0 ? "+" : "")\(String(format: "%.2f", currentProfit)) 元"
+                )
             } else {
                 Text("数据积累中...")
                     .font(.system(size: 10))
@@ -396,11 +495,20 @@ class SettingsEditorView: EditableMenuItemView {
 }
 
 private struct SettingsEditorContent: View {
+    private enum SettingsTab: String, CaseIterable {
+        case display = "显示"
+        case alerts = "提醒"
+    }
+
+    @State private var selectedTab: SettingsTab = .display
     @State private var selectedIcon: String
     @State private var profitDisplay: ProfitDisplayMode
     @State private var refreshIntervalSeconds: Int
     @State private var refreshIntervalText: String
     @State private var selectedSource: GoldPriceSource
+    @State private var defaultAlertRepeatMode: AlertRepeatMode
+    @State private var defaultAlertRepeatInterval: AlertRepeatInterval
+    @State private var saved = false
 
     private let iconOptions = ["🌕", "💰", "🥇", "⭐", "💛", "🪙", "📈", "G", "Au", ""]
 
@@ -420,6 +528,8 @@ private struct SettingsEditorContent: View {
         _refreshIntervalSeconds = State(initialValue: s.refreshInterval)
         _refreshIntervalText = State(initialValue: "\(s.refreshInterval)")
         _selectedSource = State(initialValue: currentSource)
+        _defaultAlertRepeatMode = State(initialValue: s.defaultAlertRepeatMode)
+        _defaultAlertRepeatInterval = State(initialValue: s.defaultAlertRepeatInterval)
     }
 
     var body: some View {
@@ -428,6 +538,76 @@ private struct SettingsEditorContent: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.primary)
 
+            settingsTabs
+
+            Group {
+                switch selectedTab {
+                case .display:
+                    displaySettingsSection
+                case .alerts:
+                    alertSettingsSection
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                if saved {
+                    Text("已保存 ✓")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.goldGreen)
+                }
+                Button("保存") {
+                    saveSettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(.top, 2)
+        }
+        .padding(14)
+        .frame(width: 280)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var settingsTabs: some View {
+        HStack(spacing: 18) {
+            ForEach(SettingsTab.allCases, id: \.self) { tab in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedTab = tab
+                    }
+                }) {
+                    VStack(spacing: 6) {
+                        Text(tab.rawValue)
+                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .medium))
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+
+                        Rectangle()
+                            .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                            .frame(height: 2)
+                            .clipShape(Capsule())
+                    }
+                    .frame(width: 34)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+        .padding(.bottom, 2)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 0.5)
+        }
+    }
+
+    private var displaySettingsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("状态栏显示数据源")
                     .font(.system(size: 11))
@@ -437,8 +617,6 @@ private struct SettingsEditorContent: View {
                     ForEach(GoldPriceSource.allCases, id: \.self) { source in
                         Button(action: {
                             selectedSource = source
-                            onSourceChange(source)
-                            onSave()
                         }) {
                             HStack(spacing: 8) {
                                 Text(source.isDomestic ? "国内" : "国际")
@@ -492,7 +670,6 @@ private struct SettingsEditorContent: View {
                     ForEach(iconOptions, id: \.self) { icon in
                         Button(action: {
                             selectedIcon = icon
-                            saveSettings()
                         }) {
                             Text(icon.isEmpty ? "无" : icon)
                                 .font(.system(size: icon.count <= 1 && !icon.isEmpty ? 18 : 13))
@@ -527,7 +704,6 @@ private struct SettingsEditorContent: View {
                     },
                     onSelect: {
                         profitDisplay = $0
-                        saveSettings()
                     }
                 )
             }
@@ -544,39 +720,98 @@ private struct SettingsEditorContent: View {
                     Text("s")
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
-
-                    Button("应用") {
-                        applyRefreshInterval()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
 
                 Text("支持自定义整数秒，最小 1s。当前: \(refreshIntervalSeconds)s")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
-
         }
-        .padding(14)
-        .frame(width: 280)
+    }
+
+    private var alertSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(AlertRepeatMode.allCases, id: \.self) { mode in
+                    Button(action: {
+                        defaultAlertRepeatMode = mode
+                    }) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: defaultAlertRepeatMode == mode ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 13))
+                                .foregroundColor(defaultAlertRepeatMode == mode ? .accentColor : .secondary)
+                                .padding(.top, 1)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(mode.rawValue)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.primary)
+
+                                Text(mode.detailDescription)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(defaultAlertRepeatMode == mode ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(
+                                    defaultAlertRepeatMode == mode ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.06),
+                                    lineWidth: defaultAlertRepeatMode == mode ? 1 : 0.5
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if defaultAlertRepeatMode == .recurring {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("默认提醒间隔")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    segmentedPicker(
+                        items: AlertRepeatInterval.allCases,
+                        selected: defaultAlertRepeatInterval,
+                        label: { $0.shortLabel },
+                        onSelect: {
+                            defaultAlertRepeatInterval = $0
+                        }
+                    )
+                }
+            }
+        }
     }
 
     private func saveSettings() {
+        syncRefreshIntervalInput()
         let settings = AppSettings(
             statusBarIcon: selectedIcon,
             profitDisplay: profitDisplay,
-            refreshInterval: refreshIntervalSeconds
+            refreshInterval: refreshIntervalSeconds,
+            defaultAlertRepeatMode: defaultAlertRepeatMode,
+            defaultAlertRepeatInterval: defaultAlertRepeatInterval
         )
         PriceHistoryManager.shared.saveSettings(settings)
+        onSourceChange(selectedSource)
         onSave()
+        saved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            saved = false
+        }
     }
 
-    private func applyRefreshInterval() {
+    private func syncRefreshIntervalInput() {
         let parsed = Int(refreshIntervalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? refreshIntervalSeconds
         refreshIntervalSeconds = max(1, parsed)
         refreshIntervalText = "\(refreshIntervalSeconds)"
-        saveSettings()
     }
 }
 
@@ -593,15 +828,21 @@ private struct AlertEditorContent: View {
     @State private var alerts: [PriceAlert] = PriceHistoryManager.shared.alerts
     @State private var selectedSource: GoldPriceSource = .jdZsFinance
     @State private var selectedCondition: AlertCondition = .above
-    @State private var selectedRepeatMode: AlertRepeatMode = .rearmOnCross
-    @State private var selectedRepeatInterval: AlertRepeatInterval = .fifteenMinutes
     @State private var priceText: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("价格提醒")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.primary)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("价格提醒")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text(compactRepeatSummary)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
 
             if alerts.isEmpty {
                 Text("暂无提醒规则")
@@ -652,73 +893,17 @@ private struct AlertEditorContent: View {
                     .frame(height: 22)
             }
 
-            Text("提醒方式")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(AlertRepeatMode.allCases, id: \.self) { mode in
-                    Button(action: {
-                        selectedRepeatMode = mode
-                    }) {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: selectedRepeatMode == mode ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 13))
-                                .foregroundColor(selectedRepeatMode == mode ? .accentColor : .secondary)
-                                .padding(.top, 1)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(mode.rawValue)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.primary)
-
-                                Text(mode.detailDescription)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(selectedRepeatMode == mode ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7)
-                                .stroke(
-                                    selectedRepeatMode == mode ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.06),
-                                    lineWidth: selectedRepeatMode == mode ? 1 : 0.5
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            if selectedRepeatMode == .recurring {
-                Text("提醒间隔")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-
-                segmentedPicker(
-                    items: AlertRepeatInterval.allCases,
-                    selected: selectedRepeatInterval,
-                    label: { $0.shortLabel },
-                    onSelect: { selectedRepeatInterval = $0 }
-                )
-            }
-
             HStack {
                 Spacer()
                 Button("添加") {
+                    let settings = PriceHistoryManager.shared.settings
                     guard let price = Double(priceText), price > 0 else { return }
                     let alert = PriceAlert(
                         sourceRawValue: selectedSource.rawValue,
                         condition: selectedCondition,
                         targetPrice: price,
-                        repeatMode: selectedRepeatMode,
-                        repeatInterval: selectedRepeatInterval
+                        repeatMode: settings.defaultAlertRepeatMode,
+                        repeatInterval: settings.defaultAlertRepeatInterval
                     )
                     PriceHistoryManager.shared.addAlert(alert)
                     alerts = PriceHistoryManager.shared.alerts
@@ -730,6 +915,26 @@ private struct AlertEditorContent: View {
         }
         .padding(14)
         .frame(width: 360)
+    }
+
+    private var defaultRepeatSummary: String {
+        let settings = PriceHistoryManager.shared.settings
+        switch settings.defaultAlertRepeatMode {
+        case .rearmOnCross:
+            return "新提醒默认使用：重新穿越。可在“偏好设置”中修改。"
+        case .recurring:
+            return "新提醒默认使用：持续提醒，间隔\(settings.defaultAlertRepeatInterval.shortLabel)。可在“偏好设置”中修改。"
+        }
+    }
+
+    private var compactRepeatSummary: String {
+        let settings = PriceHistoryManager.shared.settings
+        switch settings.defaultAlertRepeatMode {
+        case .rearmOnCross:
+            return "重新穿越"
+        case .recurring:
+            return "持续提醒 · \(settings.defaultAlertRepeatInterval.shortLabel)"
+        }
     }
 
     private func alertSection(title: String, alerts: [PriceAlert]) -> some View {
@@ -753,14 +958,10 @@ private struct AlertEditorContent: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.primary)
 
-                    Text("\(alert.condition.rawValue) \(String(format: "%.2f", alert.targetPrice))")
+                    Text("\(alert.condition.displayText) \(String(format: "%.2f", alert.targetPrice))")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundColor(.primary)
                 }
-
-                Text(alert.repeatSummary)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
             }
 
             Spacer()
@@ -787,8 +988,8 @@ private struct AlertEditorContent: View {
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
-        .background(Color.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .background(Color.primary.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

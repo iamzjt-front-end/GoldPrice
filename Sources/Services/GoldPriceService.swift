@@ -9,6 +9,7 @@ class GoldPriceService: ObservableObject {
 
     private var timer: Timer?
     private let historyManager = PriceHistoryManager.shared
+    private var fetchGeneration: Int = 0
 
     init() {}
 
@@ -34,9 +35,70 @@ class GoldPriceService: ObservableObject {
 
     func fetchAllPrices() {
         isLoading = true
-        fetchJDZsFinanceGoldPrice()
-        fetchJDMsFinanceGoldPrice()
-        fetchInternationalGold()
+        fetchGeneration += 1
+        let generation = fetchGeneration
+        var snapshot = allSourcePrices
+        let group = DispatchGroup()
+
+        group.enter()
+        fetchJDZsFinanceGoldPrice { [weak self] info in
+            DispatchQueue.main.async {
+                guard let self = self else {
+                    group.leave()
+                    return
+                }
+                if generation == self.fetchGeneration, let info {
+                    snapshot[.jdZsFinance] = info
+                    if let p = info.priceDouble {
+                        self.historyManager.recordPrice(p, for: GoldPriceSource.jdZsFinance.rawValue)
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.enter()
+        fetchJDMsFinanceGoldPrice { [weak self] info in
+            DispatchQueue.main.async {
+                guard let self = self else {
+                    group.leave()
+                    return
+                }
+                if generation == self.fetchGeneration, let info {
+                    snapshot[.jdMsFinance] = info
+                    if let p = info.priceDouble {
+                        self.historyManager.recordPrice(p, for: GoldPriceSource.jdMsFinance.rawValue)
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.enter()
+        fetchInternationalGold { [weak self] results in
+            DispatchQueue.main.async {
+                guard let self = self else {
+                    group.leave()
+                    return
+                }
+                if generation == self.fetchGeneration {
+                    for (source, info) in results {
+                        snapshot[source] = info
+                        if let p = info.priceDouble {
+                            self.historyManager.recordPrice(p, for: source.rawValue)
+                        }
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) { [weak self] in
+            guard let self = self, generation == self.fetchGeneration else { return }
+            self.allSourcePrices = snapshot
+            self.lastUpdateTime = Date()
+            self.isLoading = false
+        }
     }
 
     func forceRefreshAllSources(completion: (() -> Void)? = nil) {
@@ -47,20 +109,28 @@ class GoldPriceService: ObservableObject {
     private func restartRefreshTimer() {
         stopFetching()
         let refreshInterval = historyManager.settings.refreshTimeInterval
-        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: refreshInterval, repeats: true) { [weak self] _ in
             self?.fetchAllPrices()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
         NSLog("[GoldPrice] 刷新频率已更新为 \(Int(refreshInterval)) 秒")
     }
 
     // MARK: - Domestic: JD Zheshang
 
-    private func fetchJDZsFinanceGoldPrice() {
+    private func fetchJDZsFinanceGoldPrice(completion: @escaping (PriceInfo?) -> Void) {
         let urlString = "https://api.jdjygold.com/gw2/generic/jrm/h5/m/stdLatestPrice?productSku=1961543816"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
 
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-            guard let self = self, error == nil, let data = data else { return }
+            guard let self = self, error == nil, let data = data else {
+                completion(nil)
+                return
+            }
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let resultData = json["resultData"] as? [String: Any],
@@ -73,31 +143,31 @@ class GoldPriceService: ObservableObject {
                     info.changeAmount = (datas["upAndDownAmt"] as? String) ?? ""
 
                     self.updateHighLow(&info, source: .jdZsFinance)
-
-                    DispatchQueue.main.async {
-                        self.allSourcePrices[.jdZsFinance] = info
-                        self.lastUpdateTime = Date()
-                        self.isLoading = false
-                    }
-
-                    if let p = info.priceDouble {
-                        self.historyManager.recordPrice(p, for: GoldPriceSource.jdZsFinance.rawValue)
-                    }
+                    completion(info)
+                } else {
+                    completion(nil)
                 }
             } catch {
                 print("京东浙商解析失败: \(error.localizedDescription)")
+                completion(nil)
             }
         }.resume()
     }
 
     // MARK: - Domestic: JD Minsheng
 
-    private func fetchJDMsFinanceGoldPrice() {
+    private func fetchJDMsFinanceGoldPrice(completion: @escaping (PriceInfo?) -> Void) {
         let urlString = "https://api.jdjygold.com/gw/generic/hj/h5/m/latestPrice?reqData={}"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
 
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-            guard let self = self, error == nil, let data = data else { return }
+            guard let self = self, error == nil, let data = data else {
+                completion(nil)
+                return
+            }
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let resultData = json["resultData"] as? [String: Any],
@@ -110,66 +180,58 @@ class GoldPriceService: ObservableObject {
                     info.changeAmount = (datas["upAndDownAmt"] as? String) ?? ""
 
                     self.updateHighLow(&info, source: .jdMsFinance)
-
-                    DispatchQueue.main.async {
-                        self.allSourcePrices[.jdMsFinance] = info
-                        self.lastUpdateTime = Date()
-                        self.isLoading = false
-                    }
-
-                    if let p = info.priceDouble {
-                        self.historyManager.recordPrice(p, for: GoldPriceSource.jdMsFinance.rawValue)
-                    }
+                    completion(info)
+                } else {
+                    completion(nil)
                 }
             } catch {
                 print("京东民生解析失败: \(error.localizedDescription)")
+                completion(nil)
             }
         }.resume()
     }
 
     // MARK: - International: Sina Finance (London Gold + New York Gold)
 
-    private func fetchInternationalGold() {
+    private func fetchInternationalGold(completion: @escaping ([GoldPriceSource: PriceInfo]) -> Void) {
         let urlString = "https://hq.sinajs.cn/list=hf_XAU,hf_GC"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = URL(string: urlString) else {
+            completion([:])
+            return
+        }
 
         var request = URLRequest(url: url)
         request.setValue("https://finance.sina.com.cn", forHTTPHeaderField: "Referer")
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
 
         URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
-            guard let self = self, error == nil, let data = data else { return }
+            guard let self = self, error == nil, let data = data else {
+                completion([:])
+                return
+            }
 
             let text = self.decodeResponseData(data)
-            guard !text.isEmpty else { return }
+            guard !text.isEmpty else {
+                completion([:])
+                return
+            }
 
             let lines = text.components(separatedBy: ";").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            var results: [GoldPriceSource: PriceInfo] = [:]
 
             for line in lines {
                 if line.contains("hf_XAU") {
                     if let info = self.parseSinaLine(line, source: .londonGold) {
-                        DispatchQueue.main.async {
-                            self.allSourcePrices[.londonGold] = info
-                            self.lastUpdateTime = Date()
-                            self.isLoading = false
-                        }
-                        if let p = info.priceDouble {
-                            self.historyManager.recordPrice(p, for: GoldPriceSource.londonGold.rawValue)
-                        }
+                        results[.londonGold] = info
                     }
                 } else if line.contains("hf_GC") {
                     if let info = self.parseSinaLine(line, source: .newyorkGold) {
-                        DispatchQueue.main.async {
-                            self.allSourcePrices[.newyorkGold] = info
-                            self.lastUpdateTime = Date()
-                            self.isLoading = false
-                        }
-                        if let p = info.priceDouble {
-                            self.historyManager.recordPrice(p, for: GoldPriceSource.newyorkGold.rawValue)
-                        }
+                        results[.newyorkGold] = info
                     }
                 }
             }
+
+            completion(results)
         }.resume()
     }
 

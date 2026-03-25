@@ -210,7 +210,14 @@ struct GoldPriceView: View {
             }
 
             if records.count >= 2 {
-                MiniChartView(records: records, isUp: info.isUp)
+                MiniChartView(
+                    records: records,
+                    isUp: info.isUp,
+                    hoverValueFormatter: { value in
+                        "\(String(format: "%.2f", value)) \(source.unit)"
+                    },
+                    currentHintText: "\(info.formattedPrice) \(source.unit)"
+                )
             } else {
                 Text("数据积累中...")
                     .font(.system(size: 10))
