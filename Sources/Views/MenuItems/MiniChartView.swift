@@ -48,7 +48,6 @@ private struct ChartStaticShape: View, Equatable {
     let maxRecord: TrendRecord?
     let lastTrendRecord: TrendRecord?
     let yDomain: ClosedRange<Double>
-    let xMarks: [Date]
     let lineColor: Color
     let currentHintText: String
 
@@ -59,7 +58,6 @@ private struct ChartStaticShape: View, Equatable {
         lhs.lastTrendRecord == rhs.lastTrendRecord &&
         lhs.yDomain.lowerBound == rhs.yDomain.lowerBound &&
         lhs.yDomain.upperBound == rhs.yDomain.upperBound &&
-        lhs.xMarks == rhs.xMarks &&
         lhs.currentHintText == rhs.currentHintText
     }
 
@@ -96,7 +94,7 @@ private struct ChartStaticShape: View, Equatable {
                     x: .value("High Time", maxRecord.timestamp),
                     y: .value("High Value", maxRecord.value)
                 )
-                .symbolSize(42)
+                .symbolSize(12)
                 .foregroundStyle(Color.chartTipHigh)
                 .annotation(position: .top, spacing: 8) {
                     tipLabel(text: String(format: "%.2f", maxRecord.value), color: .chartTipHigh)
@@ -108,11 +106,8 @@ private struct ChartStaticShape: View, Equatable {
                     x: .value("Low Time", minRecord.timestamp),
                     y: .value("Low Value", minRecord.value)
                 )
-                .symbolSize(42)
+                .symbolSize(12)
                 .foregroundStyle(Color.chartTipLow)
-                .annotation(position: .bottom, spacing: 8) {
-                    tipLabel(text: String(format: "%.2f", minRecord.value), color: .chartTipLow)
-                }
             }
 
             if let lastTrendRecord {
@@ -136,24 +131,11 @@ private struct ChartStaticShape: View, Equatable {
                 AxisValueLabel().foregroundStyle(.clear)
             }
         }
-        .chartXAxis {
-            AxisMarks(values: xMarks) { value in
-                AxisGridLine().foregroundStyle(.clear)
-                AxisTick().foregroundStyle(.clear)
-                AxisValueLabel {
-                    if let date = value.as(Date.self) {
-                        Text(date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
+        .chartXAxis(.hidden)
         .chartYScale(domain: yDomain)
         .chartPlotStyle { plotContent in
             plotContent
-                .padding(.top, 14)
-                .padding(.bottom, 4)
+                .padding(.top, 22)
                 .background(Color.clear)
         }
     }
@@ -218,8 +200,10 @@ struct MiniChartView: View {
         let prices = trendRecords.map(\.value)
         let minValue = prices.min() ?? 0
         let maxValue = prices.max() ?? 1
-        let padding = max((maxValue - minValue) * 0.12, 0.5)
-        self.yDomain = (minValue - padding)...(maxValue + padding)
+        let range = max(maxValue - minValue, 1)
+        let lowerPadding = max(range * 0.50, 4.0)
+        let upperPadding = max(range * 0.12, 0.8)
+        self.yDomain = (minValue - lowerPadding)...(maxValue + upperPadding)
 
         if let first = trendRecords.first?.timestamp, let last = trendRecords.last?.timestamp {
             let middle = trendRecords[trendRecords.count / 2].timestamp
@@ -238,7 +222,6 @@ struct MiniChartView: View {
             maxRecord: maxRecord,
             lastTrendRecord: lastTrendRecord,
             yDomain: yDomain,
-            xMarks: xMarks,
             lineColor: lineColor,
             currentHintText: currentHintText
         )
@@ -273,42 +256,72 @@ struct MiniChartView: View {
                             }
                         }
 
-                    if let hoverSelection,
-                       let x = proxy.position(forX: hoverSelection.timestamp),
-                       let y = proxy.position(forY: hoverSelection.value) {
-                        let chartX = plotFrame.origin.x + x
-                        let chartY = plotFrame.origin.y + y
-                        let tooltipY = chartY < plotFrame.midY ? chartY + 28 : chartY - 28
-                        let clampedTooltipX = min(max(chartX, plotFrame.minX + 52), plotFrame.maxX - 52)
+                    Group {
+                        if let hoverSelection,
+                           let x = proxy.position(forX: hoverSelection.timestamp),
+                           let y = proxy.position(forY: hoverSelection.value) {
+                            let chartX = plotFrame.origin.x + x
+                            let chartY = plotFrame.origin.y + y
+                            let tooltipY = chartY < plotFrame.midY ? chartY + 28 : chartY - 28
+                            let clampedTooltipX = min(max(chartX, plotFrame.minX + 52), plotFrame.maxX - 52)
 
-                        Path { path in
-                            path.move(to: CGPoint(x: chartX, y: plotFrame.minY))
-                            path.addLine(to: CGPoint(x: chartX, y: plotFrame.maxY))
+                            Path { path in
+                                path.move(to: CGPoint(x: chartX, y: plotFrame.minY))
+                                path.addLine(to: CGPoint(x: chartX, y: plotFrame.maxY))
+                            }
+                            .stroke(Color.primary.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .allowsHitTesting(false)
+
+                            Circle()
+                                .fill(lineColor)
+                                .frame(width: 8, height: 8)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.9), lineWidth: 2)
+                                )
+                                .position(x: chartX, y: chartY)
+                                .allowsHitTesting(false)
+
+                            hoverLabel(timestamp: hoverSelection.timestamp, valueText: hoverValueFormatter(hoverSelection.value))
+                                .position(x: clampedTooltipX, y: tooltipY)
+                                .allowsHitTesting(false)
                         }
-                        .stroke(Color.primary.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                        .allowsHitTesting(false)
-
-                        Circle()
-                            .fill(lineColor)
-                            .frame(width: 8, height: 8)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white.opacity(0.9), lineWidth: 2)
-                            )
-                            .position(x: chartX, y: chartY)
-                            .allowsHitTesting(false)
-
-                        hoverLabel(timestamp: hoverSelection.timestamp, valueText: hoverValueFormatter(hoverSelection.value))
-                            .position(x: clampedTooltipX, y: tooltipY)
-                            .allowsHitTesting(false)
                     }
+                    .zIndex(2)
+
+                    Group {
+                        if let minRecord,
+                           let x = proxy.position(forX: minRecord.timestamp),
+                           let y = proxy.position(forY: minRecord.value) {
+                            let chartX = plotFrame.origin.x + x
+                            let chartY = plotFrame.origin.y + y
+                            let labelX = min(max(chartX, plotFrame.minX + 44), plotFrame.maxX - 44)
+                            let labelY = chartY + 18
+
+                            tipLabel(text: String(format: "%.2f", minRecord.value), color: .chartTipLow)
+                                .position(x: labelX, y: labelY)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .zIndex(1)
                 }
                 .transaction { transaction in
                     transaction.animation = nil
                 }
             }
         }
-        .frame(height: 128)
+        .frame(height: 94)
+
+        if xMarks.count == 3 {
+            HStack {
+                axisLabel(xMarks[0])
+                Spacer()
+                axisLabel(xMarks[1])
+                Spacer()
+                axisLabel(xMarks[2])
+            }
+            .padding(.top, 4)
+        }
     }
 
     private func shouldUpdateHoverSelection(to nextSelection: HoverSelection) -> Bool {
@@ -368,5 +381,22 @@ struct MiniChartView: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
+    }
+
+    private func tipLabel(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+            .foregroundColor(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .fixedSize()
+    }
+
+    private func axisLabel(_ date: Date) -> some View {
+        Text(date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+            .font(.system(size: 9))
+            .foregroundColor(.secondary)
     }
 }

@@ -78,10 +78,18 @@ enum ProfitDisplayMode: String, Codable, CaseIterable {
     case both = "都显示"
 }
 
+enum DailyChangeDisplayMode: String, Codable, CaseIterable {
+    case off = "不显示"
+    case amount = "涨跌金额"
+    case rate = "涨跌幅"
+    case both = "都显示"
+}
+
 struct AppSettings: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case statusBarIcon
         case profitDisplay
+        case dailyChangeDisplay
         case refreshInterval
         case defaultAlertRepeatMode
         case defaultAlertRepeatInterval
@@ -89,6 +97,7 @@ struct AppSettings: Codable, Equatable {
 
     var statusBarIcon: String = "🌕"
     var profitDisplay: ProfitDisplayMode = .off
+    var dailyChangeDisplay: DailyChangeDisplayMode = .off
     var refreshInterval: Int = 5
     var defaultAlertRepeatMode: AlertRepeatMode = .recurring
     var defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
@@ -96,12 +105,14 @@ struct AppSettings: Codable, Equatable {
     init(
         statusBarIcon: String = "🌕",
         profitDisplay: ProfitDisplayMode = .off,
+        dailyChangeDisplay: DailyChangeDisplayMode = .off,
         refreshInterval: Int = 5,
         defaultAlertRepeatMode: AlertRepeatMode = .recurring,
         defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
     ) {
         self.statusBarIcon = statusBarIcon
         self.profitDisplay = profitDisplay
+        self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
         self.defaultAlertRepeatMode = defaultAlertRepeatMode
         self.defaultAlertRepeatInterval = defaultAlertRepeatInterval
@@ -115,6 +126,7 @@ struct AppSettings: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         statusBarIcon = try container.decodeIfPresent(String.self, forKey: .statusBarIcon) ?? "🌕"
         profitDisplay = try container.decodeIfPresent(ProfitDisplayMode.self, forKey: .profitDisplay) ?? .off
+        dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
         defaultAlertRepeatMode = try container.decodeIfPresent(AlertRepeatMode.self, forKey: .defaultAlertRepeatMode) ?? .recurring
         defaultAlertRepeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .defaultAlertRepeatInterval) ?? .fiveMinutes
@@ -124,6 +136,7 @@ struct AppSettings: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(statusBarIcon, forKey: .statusBarIcon)
         try container.encode(profitDisplay, forKey: .profitDisplay)
+        try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(defaultAlertRepeatMode, forKey: .defaultAlertRepeatMode)
         try container.encode(defaultAlertRepeatInterval, forKey: .defaultAlertRepeatInterval)

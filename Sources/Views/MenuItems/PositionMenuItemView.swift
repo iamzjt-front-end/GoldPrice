@@ -505,6 +505,7 @@ private struct SettingsEditorContent: View {
     @State private var selectedTab: SettingsTab = .display
     @State private var selectedIcon: String
     @State private var profitDisplay: ProfitDisplayMode
+    @State private var dailyChangeDisplay: DailyChangeDisplayMode
     @State private var refreshIntervalSeconds: Int
     @State private var refreshIntervalText: String
     @State private var selectedSource: GoldPriceSource
@@ -527,6 +528,7 @@ private struct SettingsEditorContent: View {
         let s = PriceHistoryManager.shared.settings
         _selectedIcon = State(initialValue: s.statusBarIcon)
         _profitDisplay = State(initialValue: s.profitDisplay)
+        _dailyChangeDisplay = State(initialValue: s.dailyChangeDisplay)
         _refreshIntervalSeconds = State(initialValue: s.refreshInterval)
         _refreshIntervalText = State(initialValue: "\(s.refreshInterval)")
         _selectedSource = State(initialValue: currentSource)
@@ -690,6 +692,27 @@ private struct SettingsEditorContent: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
+                Text("状态栏显示当日涨跌")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                segmentedPicker(
+                    items: DailyChangeDisplayMode.allCases,
+                    selected: dailyChangeDisplay,
+                    label: { mode in
+                        switch mode {
+                        case .off: return "关"
+                        case .amount: return "金额"
+                        case .rate: return "涨跌幅"
+                        case .both: return "全部"
+                        }
+                    },
+                    onSelect: {
+                        dailyChangeDisplay = $0
+                    }
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
                 Text("状态栏显示收益")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
@@ -797,6 +820,7 @@ private struct SettingsEditorContent: View {
         let settings = AppSettings(
             statusBarIcon: selectedIcon,
             profitDisplay: profitDisplay,
+            dailyChangeDisplay: dailyChangeDisplay,
             refreshInterval: refreshIntervalSeconds,
             defaultAlertRepeatMode: defaultAlertRepeatMode,
             defaultAlertRepeatInterval: defaultAlertRepeatInterval
@@ -1061,7 +1085,6 @@ private struct PercentageAlertEditorContent: View {
         }
         .padding(14)
         .frame(width: 300)
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var compactRepeatSummary: String {
@@ -1129,7 +1152,7 @@ private struct PercentageAlertEditorContent: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     percentageAlertSection(title: metric.rawValue, alerts: metricAlerts)
                 }
-                .frame(maxHeight: 200)
+                .frame(height: 100)
             }
 
             Divider()

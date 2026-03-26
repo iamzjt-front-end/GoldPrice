@@ -166,6 +166,36 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         var title = "\(prefix)\(info.formattedPrice)"
 
+        let dailyChangeMode = historyManager.settings.dailyChangeDisplay
+        if dailyChangeMode != .off {
+            let changeAmount = info.changeAmount.trimmingCharacters(in: .whitespacesAndNewlines)
+            let changeRate = info.changeRate.trimmingCharacters(in: .whitespacesAndNewlines)
+            let dailyChangeText: String?
+
+            switch dailyChangeMode {
+            case .off:
+                dailyChangeText = nil
+            case .amount:
+                dailyChangeText = changeAmount.isEmpty ? nil : changeAmount
+            case .rate:
+                dailyChangeText = changeRate.isEmpty ? nil : changeRate
+            case .both:
+                if !changeAmount.isEmpty && !changeRate.isEmpty {
+                    dailyChangeText = "\(changeAmount) (\(changeRate))"
+                } else if !changeAmount.isEmpty {
+                    dailyChangeText = changeAmount
+                } else if !changeRate.isEmpty {
+                    dailyChangeText = changeRate
+                } else {
+                    dailyChangeText = nil
+                }
+            }
+
+            if let dailyChangeText {
+                title += "  \(dailyChangeText)"
+            }
+        }
+
         let profitMode = historyManager.settings.profitDisplay
         if profitMode != .off,
            let pos = historyManager.position,
