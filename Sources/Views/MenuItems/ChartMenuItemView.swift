@@ -27,6 +27,10 @@ class ChartMenuItemView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        guard let submenuWindow = window else { return }
+        var frame = submenuWindow.frame
+        frame.origin.x += 8
+        submenuWindow.setFrame(frame, display: false)
     }
 
     required init?(coder: NSCoder) { fatalError() }

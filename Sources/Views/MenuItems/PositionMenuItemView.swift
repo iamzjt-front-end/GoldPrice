@@ -19,8 +19,12 @@ class EditableMenuItemView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        guard let submenuWindow = window else { return }
+        var frame = submenuWindow.frame
+        frame.origin.x += 8
+        submenuWindow.setFrame(frame, display: false)
         DispatchQueue.main.async {
-            self.window?.makeKey()
+            submenuWindow.makeKey()
         }
     }
 
@@ -387,7 +391,7 @@ class PositionEditorView: EditableMenuItemView {
         super.init(contentView: NSHostingView(rootView: PositionEditorContent(
             position: position,
             allSources: allSources
-        )), minWidth: 240)
+        )), minWidth: 320)
     }
     required init?(coder: NSCoder) { fatalError() }
 }
@@ -420,6 +424,7 @@ private struct PositionEditorContent: View {
                 TextField("例如: 10.00", text: $gramsText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 13))
+                    .frame(width: 120)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -429,6 +434,7 @@ private struct PositionEditorContent: View {
                 TextField("例如: 980.50", text: $avgPriceText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 13))
+                    .frame(width: 120)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -469,7 +475,7 @@ private struct PositionEditorContent: View {
             }
         }
         .padding(14)
-        .frame(width: 260)
+        .frame(width: 320)
     }
 }
 
@@ -815,14 +821,14 @@ private struct SettingsEditorContent: View {
 
 class AlertEditorView: EditableMenuItemView {
     init() {
-        super.init(contentView: NSHostingView(rootView: AlertEditorContent()), minWidth: 360)
+        super.init(contentView: NSHostingView(rootView: AlertEditorContent()), minWidth: 300)
     }
     required init?(coder: NSCoder) { fatalError() }
 }
 
 class PercentageAlertEditorView: EditableMenuItemView {
     init() {
-        super.init(contentView: NSHostingView(rootView: PercentageAlertEditorContent()), minWidth: 380)
+        super.init(contentView: NSHostingView(rootView: PercentageAlertEditorContent()), minWidth: 300)
     }
     required init?(coder: NSCoder) { fatalError() }
 }
@@ -917,7 +923,7 @@ private struct AlertEditorContent: View {
             }
         }
         .padding(14)
-        .frame(width: 360)
+        .frame(width: 300)
     }
 
     private var defaultRepeatSummary: String {
@@ -1054,7 +1060,7 @@ private struct PercentageAlertEditorContent: View {
             }
         }
         .padding(14)
-        .frame(width: 380)
+        .frame(width: 300)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 

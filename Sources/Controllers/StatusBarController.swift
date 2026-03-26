@@ -756,7 +756,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             menuIsOpen = false
             return
         }
-
         menu.removeAllItems()
     }
 }
