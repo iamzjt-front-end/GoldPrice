@@ -9,21 +9,6 @@ extension NSColor {
     static let goldGreen = NSColor(red: 99/255, green: 171/255, blue: 142/255, alpha: 1)
 }
 
-class SubmenuOffsetView: NSView {
-    init() {
-        super.init(frame: NSRect(x: 0, y: 0, width: 0, height: 0))
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard let w = window else { return }
-        var frame = w.frame
-        frame.origin.x += 8
-        w.setFrame(frame, display: false)
-    }
-}
-
 class ChartMenuItemView: NSView {
     private let hostingView: NSHostingView<ChartPanelContent>
 
@@ -42,10 +27,6 @@ class ChartMenuItemView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let submenuWindow = window else { return }
-        var frame = submenuWindow.frame
-        frame.origin.x += 8
-        submenuWindow.setFrame(frame, display: false)
     }
 
     required init?(coder: NSCoder) { fatalError() }

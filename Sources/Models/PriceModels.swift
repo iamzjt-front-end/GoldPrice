@@ -138,8 +138,8 @@ enum AlertCondition: String, Codable, CaseIterable {
 
     var displayText: String {
         switch self {
-        case .above: return "＞"
-        case .below: return "＜"
+        case .above: return "≥"
+        case .below: return "≤"
         }
     }
 }
@@ -267,6 +267,116 @@ struct PriceAlert: Codable, Equatable {
         try container.encode(repeatInterval, forKey: .repeatInterval)
         try container.encodeIfPresent(lastTriggeredAt, forKey: .lastTriggeredAt)
         try container.encode(wasConditionMet, forKey: .wasConditionMet)
+    }
+}
+
+// MARK: - Percentage Alert (涨跌幅提醒)
+
+enum PercentageAlertMetric: String, Codable, CaseIterable {
+    case netChange = "净涨跌幅"
+    case intradayRange = "波动幅度"
+
+    var detailDescription: String {
+        switch self {
+        case .netChange:
+            return "按当日开盘价到当前价的净涨跌幅计算。"
+        case .intradayRange:
+            return "按当日最高价与最低价的差值，相对开盘价计算。"
+        }
+    }
+}
+
+struct PercentageAlert: Codable, Equatable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sourceRawValue
+        case metric
+        case targetPercent
+        case triggered
+        case repeatMode
+        case repeatInterval
+        case lastTriggeredAt
+        case wasConditionMet
+    }
+
+    var id: String = UUID().uuidString
+    var sourceRawValue: String
+    var metric: PercentageAlertMetric
+    var targetPercent: Double
+    var triggered: Bool = false
+    var repeatMode: AlertRepeatMode = .recurring
+    var repeatInterval: AlertRepeatInterval = .fiveMinutes
+    var lastTriggeredAt: Date? = nil
+    var wasConditionMet: Bool = false
+
+    init(
+        id: String = UUID().uuidString,
+        sourceRawValue: String,
+        metric: PercentageAlertMetric,
+        targetPercent: Double,
+        triggered: Bool = false,
+        repeatMode: AlertRepeatMode = .recurring,
+        repeatInterval: AlertRepeatInterval = .fiveMinutes,
+        lastTriggeredAt: Date? = nil,
+        wasConditionMet: Bool = false
+    ) {
+        self.id = id
+        self.sourceRawValue = sourceRawValue
+        self.metric = metric
+        self.targetPercent = metric == .intradayRange ? abs(targetPercent) : targetPercent
+        self.triggered = triggered
+        self.repeatMode = repeatMode
+        self.repeatInterval = repeatInterval
+        self.lastTriggeredAt = lastTriggeredAt
+        self.wasConditionMet = wasConditionMet
+    }
+
+    var source: GoldPriceSource? {
+        GoldPriceSource(rawValue: sourceRawValue)
+    }
+
+    var normalizedTargetPercent: Double {
+        metric == .intradayRange ? abs(targetPercent) : targetPercent
+    }
+
+    var comparatorText: String {
+        switch metric {
+        case .netChange:
+            if normalizedTargetPercent >= 0 {
+                return "≥ \(PercentageAlert.formattedPercent(normalizedTargetPercent, alwaysShowSign: true))"
+            } else {
+                return "≤ \(PercentageAlert.formattedPercent(normalizedTargetPercent, alwaysShowSign: true))"
+            }
+        case .intradayRange:
+            return "≥ \(PercentageAlert.formattedPercent(normalizedTargetPercent))"
+        }
+    }
+
+    var repeatSummary: String {
+        switch repeatMode {
+        case .rearmOnCross:
+            return "重新穿越阈值后再次提醒"
+        case .recurring:
+            return "持续满足条件时\(repeatInterval.description)"
+        }
+    }
+
+    func isConditionMet(currentPercent: Double) -> Bool {
+        switch metric {
+        case .netChange:
+            if normalizedTargetPercent >= 0 {
+                return currentPercent >= normalizedTargetPercent
+            } else {
+                return currentPercent <= normalizedTargetPercent
+            }
+        case .intradayRange:
+            return currentPercent >= normalizedTargetPercent
+        }
+    }
+
+    static func formattedPercent(_ value: Double, alwaysShowSign: Bool = false) -> String {
+        let sign = alwaysShowSign && value >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.2f", value))%"
     }
 }
 

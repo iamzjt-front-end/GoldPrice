@@ -19,12 +19,8 @@ class EditableMenuItemView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let submenuWindow = window else { return }
-        var frame = submenuWindow.frame
-        frame.origin.x += 8
-        submenuWindow.setFrame(frame, display: false)
         DispatchQueue.main.async {
-            submenuWindow.makeKey()
+            self.window?.makeKey()
         }
     }
 
@@ -90,7 +86,7 @@ class PositionDisplayView: NSView {
     private let trailingStack = NSStackView()
 
     init(position: PositionInfo, currentPrice: Double?) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 50))
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 44))
         setupView()
         update(position: position, currentPrice: currentPrice)
     }
@@ -160,11 +156,11 @@ class PositionDisplayView: NSView {
 
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 280),
-            heightAnchor.constraint(equalToConstant: 50),
+            heightAnchor.constraint(equalToConstant: 44),
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            container.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
         ])
     }
 }
@@ -824,6 +820,13 @@ class AlertEditorView: EditableMenuItemView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
+class PercentageAlertEditorView: EditableMenuItemView {
+    init() {
+        super.init(contentView: NSHostingView(rootView: PercentageAlertEditorContent()), minWidth: 380)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
 private struct AlertEditorContent: View {
     @State private var alerts: [PriceAlert] = PriceHistoryManager.shared.alerts
     @State private var selectedSource: GoldPriceSource = .jdZsFinance
@@ -990,6 +993,250 @@ private struct AlertEditorContent: View {
         .padding(.horizontal, 6)
         .background(Color.primary.opacity(0.025))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct PercentageAlertEditorContent: View {
+    private enum PercentageAlertTab: String, CaseIterable {
+        case netChange = "净涨跌幅"
+        case intradayRange = "波动幅度"
+
+        var metric: PercentageAlertMetric {
+            switch self {
+            case .netChange: return .netChange
+            case .intradayRange: return .intradayRange
+            }
+        }
+    }
+
+    @State private var alerts: [PercentageAlert] = PriceHistoryManager.shared.percentageAlerts
+    @State private var selectedTab: PercentageAlertTab = .netChange
+    @State private var netChangeSource: GoldPriceSource = .jdZsFinance
+    @State private var intradayRangeSource: GoldPriceSource = .jdZsFinance
+    @State private var netChangeTargetText: String = ""
+    @State private var intradayRangeTargetText: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("涨跌幅提醒")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text(compactRepeatSummary)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            percentageAlertTabs
+
+            Group {
+                switch selectedTab {
+                case .netChange:
+                    metricEditorSection(
+                        metric: .netChange,
+                        source: $netChangeSource,
+                        targetText: $netChangeTargetText,
+                        placeholder: "目标幅度，如 2 或 -2",
+                        description: "净涨跌幅按开盘价到当前价计算；负数表示下跌幅度。"
+                    )
+                case .intradayRange:
+                    metricEditorSection(
+                        metric: .intradayRange,
+                        source: $intradayRangeSource,
+                        targetText: $intradayRangeTargetText,
+                        placeholder: "目标波动幅度，如 2",
+                        description: "波动幅度按当日最高价与最低价差值，相对开盘价计算，只允许正数。"
+                    )
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 380)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var compactRepeatSummary: String {
+        let settings = PriceHistoryManager.shared.settings
+        switch settings.defaultAlertRepeatMode {
+        case .rearmOnCross:
+            return "重新穿越"
+        case .recurring:
+            return "持续提醒 · \(settings.defaultAlertRepeatInterval.shortLabel)"
+        }
+    }
+
+    private var percentageAlertTabs: some View {
+        HStack(spacing: 18) {
+            ForEach(PercentageAlertTab.allCases, id: \.self) { tab in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedTab = tab
+                    }
+                }) {
+                    VStack(spacing: 6) {
+                        Text(tab.rawValue)
+                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .medium))
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+
+                        Rectangle()
+                            .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                            .frame(height: 2)
+                            .clipShape(Capsule())
+                    }
+                    .frame(width: tab == .netChange ? 56 : 50)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+        .padding(.bottom, 2)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 0.5)
+        }
+    }
+
+    private func metricEditorSection(
+        metric: PercentageAlertMetric,
+        source: Binding<GoldPriceSource>,
+        targetText: Binding<String>,
+        placeholder: String,
+        description: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            let metricAlerts = alerts
+                .filter { $0.metric == metric }
+                .sorted { $0.normalizedTargetPercent < $1.normalizedTargetPercent }
+
+            if metricAlerts.isEmpty {
+                Text("暂无提醒规则")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    percentageAlertSection(title: metric.rawValue, alerts: metricAlerts)
+                }
+                .frame(maxHeight: 200)
+            }
+
+            Divider()
+
+            Text("添加提醒")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            segmentedPicker(
+                items: GoldPriceSource.allCases,
+                selected: source.wrappedValue,
+                label: { $0.rawValue },
+                onSelect: { source.wrappedValue = $0 }
+            )
+
+            HStack(spacing: 6) {
+                PastableTextField(text: targetText, placeholder: placeholder)
+                    .frame(height: 22)
+
+                Text("%")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+
+            Text(description)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+
+            HStack {
+                Spacer()
+                Button("添加") {
+                    appendAlert(metric: metric, source: source.wrappedValue, targetText: targetText)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func percentageAlertSection(title: String, alerts: [PercentageAlert]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.leading, 2)
+
+            ForEach(alerts, id: \.id) { alert in
+                percentageAlertRow(alert)
+            }
+        }
+    }
+
+    private func percentageAlertRow(_ alert: PercentageAlert) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(alert.sourceRawValue)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.primary)
+
+                    Text("\(alert.metric.rawValue) \(alert.comparatorText)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(.primary)
+                }
+            }
+
+            Spacer()
+
+            if alert.triggered {
+                Button("重置") {
+                    if let index = alerts.firstIndex(where: { $0.id == alert.id }) {
+                        alerts[index].triggered = false
+                        alerts[index].lastTriggeredAt = nil
+                        alerts[index].wasConditionMet = false
+                        PriceHistoryManager.shared.savePercentageAlerts(alerts)
+                    }
+                }
+                .font(.system(size: 10))
+                .foregroundColor(.orange)
+                .buttonStyle(.plain)
+            }
+
+            Button(action: {
+                alerts.removeAll { $0.id == alert.id }
+                PriceHistoryManager.shared.savePercentageAlerts(alerts)
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .background(Color.primary.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func appendAlert(metric: PercentageAlertMetric, source: GoldPriceSource, targetText: Binding<String>) {
+        let settings = PriceHistoryManager.shared.settings
+        guard let target = Double(targetText.wrappedValue) else { return }
+        let normalizedTarget = metric == .intradayRange ? abs(target) : target
+        alerts.append(
+            PercentageAlert(
+                sourceRawValue: source.rawValue,
+                metric: metric,
+                targetPercent: normalizedTarget,
+                repeatMode: settings.defaultAlertRepeatMode,
+                repeatInterval: settings.defaultAlertRepeatInterval
+            )
+        )
+        PriceHistoryManager.shared.savePercentageAlerts(alerts)
+        targetText.wrappedValue = ""
     }
 }
 

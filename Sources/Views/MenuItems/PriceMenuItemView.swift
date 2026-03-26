@@ -10,7 +10,7 @@ class PriceMenuItemView: NSView {
 
     init(source: GoldPriceSource, info: PriceInfo, onHover: @escaping (Bool) -> Void = { _ in }) {
         self.onHover = onHover
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 34))
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
 
         setupView()
         update(source: source, info: info)
@@ -74,11 +74,11 @@ class PriceMenuItemView: NSView {
 
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 280),
-            heightAnchor.constraint(equalToConstant: 34),
+            heightAnchor.constraint(equalToConstant: 28),
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            container.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3)
         ])
     }
 }

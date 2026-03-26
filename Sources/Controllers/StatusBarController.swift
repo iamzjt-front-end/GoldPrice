@@ -3,12 +3,81 @@ import AppKit
 import Combine
 import UserNotifications
 
+private final class MenuMetaHeaderView: NSView {
+    private let label = NSTextField(labelWithString: "")
+
+    init(text: String) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
+
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .tertiaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.stringValue = text
+
+        addSubview(label)
+
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 280),
+            heightAnchor.constraint(equalToConstant: 28),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(text: String) {
+        label.stringValue = text
+    }
+}
+
+private final class MenuNavigationRowView: NSView {
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let chevronLabel = NSTextField(labelWithString: "›")
+
+    init(title: String) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
+
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        titleLabel.textColor = .labelColor
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.stringValue = title
+
+        chevronLabel.font = .systemFont(ofSize: 20, weight: .regular)
+        chevronLabel.textColor = .secondaryLabelColor
+        chevronLabel.alignment = .right
+        chevronLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(titleLabel)
+        addSubview(chevronLabel)
+
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 280),
+            heightAnchor.constraint(equalToConstant: 28),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            chevronLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronLabel.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(title: String) {
+        titleLabel.stringValue = title
+    }
+}
+
 class StatusBarController: NSObject, NSMenuDelegate {
     private enum DeferredSubmenuKind: String {
         case priceChart
         case positionChart
         case settings
         case alerts
+        case percentageAlerts
     }
 
     private var statusBar: NSStatusBar
@@ -22,6 +91,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var priceItems: [GoldPriceSource: NSMenuItem] = [:]
     private var positionMenuItem: NSMenuItem?
     private var alertMenuItem: NSMenuItem?
+    private var percentageAlertMenuItem: NSMenuItem?
     private var updateTimeMenuItem: NSMenuItem?
     private var submenuSources: [ObjectIdentifier: GoldPriceSource] = [:]
 
@@ -120,6 +190,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         button.title = title
         checkPriceAlerts()
+        checkPercentageAlerts()
     }
 
     // MARK: - Menu
@@ -132,8 +203,21 @@ class StatusBarController: NSObject, NSMenuDelegate {
         priceItems.removeAll()
         positionMenuItem = nil
         alertMenuItem = nil
+        percentageAlertMenuItem = nil
         updateTimeMenuItem = nil
         submenuSources.removeAll()
+
+        // Update time
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm:ss"
+        let timeStr = "更新于 \(timeFormatter.string(from: dataService.lastUpdateTime))"
+        let timeItem = NSMenuItem(title: timeStr, action: nil, keyEquivalent: "")
+        timeItem.isEnabled = false
+        timeItem.view = MenuMetaHeaderView(text: timeStr)
+        updateTimeMenuItem = timeItem
+        menu.addItem(timeItem)
+
+        menu.addItem(NSMenuItem.separator())
 
         // Domestic
         addSectionHeader("国内金价", to: menu)
@@ -159,25 +243,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
         // Alerts (价格提醒)
         menu.addItem(makeAlertMenuItem())
 
+        // Percentage Alerts (涨跌幅提醒)
+        menu.addItem(makePercentageAlertMenuItem())
+
         // Settings (偏好设置)
         menu.addItem(makeSettingsMenuItem())
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Update time
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm:ss"
-        let timeStr = "更新于 \(timeFormatter.string(from: dataService.lastUpdateTime))"
-        let timeItem = NSMenuItem(title: timeStr, action: nil, keyEquivalent: "")
-        timeItem.isEnabled = false
-        timeItem.attributedTitle = updateTimeAttributedString(for: timeStr)
-        updateTimeMenuItem = timeItem
-        menu.addItem(timeItem)
-
-        // Refresh
-        let refreshItem = NSMenuItem(title: "立即刷新", action: #selector(refreshNow), keyEquivalent: "r")
-        refreshItem.target = self
-        menu.addItem(refreshItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -231,10 +301,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     private func makeSettingsMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "偏好设置", action: nil, keyEquivalent: "")
-        item.attributedTitle = NSAttributedString(string: "偏好设置", attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor.labelColor
-        ])
+        item.view = MenuNavigationRowView(title: "偏好设置")
         item.submenu = makeDeferredSubmenu(kind: .settings)
 
         return item
@@ -243,12 +310,19 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let alertCount = historyManager.alerts.count
         let title = alertCount > 0 ? "价格提醒 (\(alertCount))" : "价格提醒"
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor.labelColor
-        ])
+        item.view = MenuNavigationRowView(title: title)
         item.submenu = makeDeferredSubmenu(kind: .alerts)
         alertMenuItem = item
+        return item
+    }
+
+    private func makePercentageAlertMenuItem() -> NSMenuItem {
+        let alertCount = historyManager.percentageAlerts.count
+        let title = alertCount > 0 ? "涨跌幅提醒 (\(alertCount))" : "涨跌幅提醒"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.view = MenuNavigationRowView(title: title)
+        item.submenu = makeDeferredSubmenu(kind: .percentageAlerts)
+        percentageAlertMenuItem = item
         return item
     }
 
@@ -267,6 +341,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         refreshPriceItems()
         refreshPositionItem()
         refreshAlertMenuItemTitle()
+        refreshPercentageAlertMenuItemTitle()
         refreshUpdateTimeItem()
         refreshOpenSubmenusIfNeeded()
     }
@@ -310,10 +385,29 @@ class StatusBarController: NSObject, NSMenuDelegate {
         let alertCount = historyManager.alerts.count
         let title = alertCount > 0 ? "价格提醒 (\(alertCount))" : "价格提醒"
         item.title = title
-        item.attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor.labelColor
-        ])
+        if let view = item.view as? MenuNavigationRowView {
+            view.update(title: title)
+        } else {
+            item.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor
+            ])
+        }
+    }
+
+    private func refreshPercentageAlertMenuItemTitle() {
+        guard let item = percentageAlertMenuItem else { return }
+        let alertCount = historyManager.percentageAlerts.count
+        let title = alertCount > 0 ? "涨跌幅提醒 (\(alertCount))" : "涨跌幅提醒"
+        item.title = title
+        if let view = item.view as? MenuNavigationRowView {
+            view.update(title: title)
+        } else {
+            item.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor
+            ])
+        }
     }
 
     private func refreshUpdateTimeItem() {
@@ -321,7 +415,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
         timeFormatter.dateFormat = "HH:mm:ss"
         let timeStr = "更新于 \(timeFormatter.string(from: dataService.lastUpdateTime))"
         updateTimeMenuItem?.title = timeStr
-        updateTimeMenuItem?.attributedTitle = updateTimeAttributedString(for: timeStr)
+        if let view = updateTimeMenuItem?.view as? MenuMetaHeaderView {
+            view.update(text: timeStr)
+        } else {
+            updateTimeMenuItem?.attributedTitle = updateTimeAttributedString(for: timeStr)
+        }
     }
 
     private func updateTimeAttributedString(for text: String) -> NSAttributedString {
@@ -432,6 +530,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(alertItem)
     }
 
+    private func populatePercentageAlertsSubmenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let alertView = PercentageAlertEditorView()
+        let alertItem = NSMenuItem()
+        alertItem.view = alertView
+        menu.addItem(alertItem)
+    }
+
     private func checkPriceAlerts() {
         let now = Date()
         var alerts = historyManager.alerts
@@ -479,6 +585,82 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    private func checkPercentageAlerts() {
+        let now = Date()
+        var alerts = historyManager.percentageAlerts
+        var didUpdateAlerts = false
+
+        for index in alerts.indices {
+            let alert = alerts[index]
+            guard let source = alert.source,
+                  let metricValue = percentageMetricValue(for: source, metric: alert.metric) else { continue }
+
+            let conditionMet = alert.isConditionMet(currentPercent: metricValue)
+            let shouldNotify = shouldNotify(
+                repeatMode: alert.repeatMode,
+                conditionMet: conditionMet,
+                wasConditionMet: alert.wasConditionMet,
+                lastTriggeredAt: alert.lastTriggeredAt,
+                interval: alert.repeatInterval,
+                now: now
+            )
+
+            if shouldNotify {
+                alerts[index].triggered = true
+                alerts[index].lastTriggeredAt = now
+                sendPercentageAlertNotification(alert: alert, currentPercent: metricValue)
+                didUpdateAlerts = true
+            }
+
+            if alerts[index].wasConditionMet != conditionMet {
+                alerts[index].wasConditionMet = conditionMet
+                didUpdateAlerts = true
+            }
+        }
+
+        if didUpdateAlerts {
+            historyManager.savePercentageAlerts(alerts)
+            refreshMenuContent()
+        }
+    }
+
+    private func shouldNotify(
+        repeatMode: AlertRepeatMode,
+        conditionMet: Bool,
+        wasConditionMet: Bool,
+        lastTriggeredAt: Date?,
+        interval: AlertRepeatInterval,
+        now: Date
+    ) -> Bool {
+        switch repeatMode {
+        case .rearmOnCross:
+            return conditionMet && !wasConditionMet
+        case .recurring:
+            if conditionMet && !wasConditionMet {
+                return true
+            } else if conditionMet, let lastTriggeredAt {
+                return now.timeIntervalSince(lastTriggeredAt) >= TimeInterval(interval.rawValue)
+            } else {
+                return conditionMet && lastTriggeredAt == nil
+            }
+        }
+    }
+
+    private func percentageMetricValue(for source: GoldPriceSource, metric: PercentageAlertMetric) -> Double? {
+        let records = historyManager.getTodayRecords(for: source.rawValue)
+        guard let openPrice = records.first?.price, openPrice > 0 else { return nil }
+
+        switch metric {
+        case .netChange:
+            guard let currentPrice = dataService.allSourcePrices[source]?.priceDouble else { return nil }
+            return (currentPrice - openPrice) / openPrice * 100
+        case .intradayRange:
+            let high = records.map(\.price).max() ?? openPrice
+            let low = records.map(\.price).min() ?? openPrice
+            return (high - low) / openPrice * 100
+        }
+    }
+
     private func sendAlertNotification(alert: PriceAlert, currentPrice: Double, unit: String) {
         guard Bundle.main.bundleIdentifier != nil else {
             NSLog("[GoldPrice] Alert triggered: \(alert.sourceRawValue) \(alert.condition.displayText) \(alert.targetPrice), current: \(currentPrice)")
@@ -499,6 +681,34 @@ class StatusBarController: NSObject, NSMenuDelegate {
                 NSLog("[GoldPrice] 通知发送失败: \(error.localizedDescription)")
             } else {
                 NSLog("[GoldPrice] 通知已发送: \(content.title)")
+            }
+        }
+    }
+
+    private func sendPercentageAlertNotification(alert: PercentageAlert, currentPercent: Double) {
+        let thresholdText = alert.comparatorText
+        let currentText = PercentageAlert.formattedPercent(currentPercent, alwaysShowSign: alert.metric == .netChange)
+
+        guard Bundle.main.bundleIdentifier != nil else {
+            NSLog("[GoldPrice] Percentage alert triggered: \(alert.sourceRawValue) \(alert.metric.rawValue) \(thresholdText), current: \(currentText)")
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "\(alert.sourceRawValue) \(alert.metric.rawValue) \(thresholdText)"
+        content.body = "当前\(alert.metric.rawValue)：\(currentText)"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "percentage-alert-\(alert.id)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("[GoldPrice] 涨跌幅通知发送失败: \(error.localizedDescription)")
+            } else {
+                NSLog("[GoldPrice] 涨跌幅通知已发送: \(content.title)")
             }
         }
     }
@@ -536,6 +746,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             populateSettingsSubmenu(menu)
         case .alerts:
             populateAlertsSubmenu(menu)
+        case .percentageAlerts:
+            populatePercentageAlertsSubmenu(menu)
         }
     }
 

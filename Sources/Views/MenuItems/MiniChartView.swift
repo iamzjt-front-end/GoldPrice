@@ -18,58 +18,28 @@ private struct HoverSelection: Equatable {
     let value: Double
 }
 
-private func emaSmooth(_ values: [Double], alpha: Double) -> [Double] {
-    guard let first = values.first else { return [] }
-
-    var result: [Double] = [first]
-    for value in values.dropFirst() {
-        let next = alpha * value + (1 - alpha) * result[result.count - 1]
-        result.append(next)
-    }
-    return result
-}
-
 private func buildTrendRecords(from records: [PriceRecord]) -> [TrendRecord] {
-    guard records.count >= 3 else {
+    guard !records.isEmpty else { return [] }
+    guard records.count >= 2 else {
         return records.map { TrendRecord(timestamp: $0.timestamp, value: $0.price) }
     }
 
-    let smoothed = emaSmooth(emaSmooth(records.map(\.price), alpha: 0.22), alpha: 0.18)
-    let targetCount = min(28, max(14, records.count / 8))
-    let bucketSize = max(1, Int(ceil(Double(records.count) / Double(targetCount))))
+    let calendar = Calendar.current
+    let startOfDay = calendar.startOfDay(for: records[0].timestamp)
+    let bucketInterval: TimeInterval = 120
 
-    var trendRecords: [TrendRecord] = []
-    var index = 0
-
-    while index < records.count {
-        let end = min(index + bucketSize, records.count)
-        let smoothedBucket = Array(smoothed[index..<end])
-        let bucketCenter = index + ((end - index) / 2)
-        let averageValue = smoothedBucket.reduce(0, +) / Double(smoothedBucket.count)
-        trendRecords.append(TrendRecord(timestamp: records[bucketCenter].timestamp, value: averageValue))
-        index = end
+    var bucketedRecords: [Int: PriceRecord] = [:]
+    for record in records {
+        let offset = max(0, record.timestamp.timeIntervalSince(startOfDay))
+        let bucketIndex = Int(offset / bucketInterval)
+        bucketedRecords[bucketIndex] = record
     }
 
-    if let first = records.first {
-        trendRecords[0] = TrendRecord(timestamp: first.timestamp, value: first.price)
-    }
-    if let last = records.last {
-        trendRecords[trendRecords.count - 1] = TrendRecord(timestamp: last.timestamp, value: last.price)
-    }
-
-    if let maxRecord = records.max(by: { $0.price < $1.price }) {
-        trendRecords.append(TrendRecord(timestamp: maxRecord.timestamp, value: maxRecord.price))
-    }
-    if let minRecord = records.min(by: { $0.price < $1.price }) {
-        trendRecords.append(TrendRecord(timestamp: minRecord.timestamp, value: minRecord.price))
-    }
-
-    let deduplicated = Dictionary(
-        trendRecords.map { ($0.timestamp.timeIntervalSince1970, $0) },
-        uniquingKeysWith: { _, new in new }
-    )
-
-    return deduplicated.values.sorted { $0.timestamp < $1.timestamp }
+    return bucketedRecords
+        .keys
+        .sorted()
+        .compactMap { bucketedRecords[$0] }
+        .map { TrendRecord(timestamp: $0.timestamp, value: $0.price) }
 }
 
 private struct ChartStaticShape: View, Equatable {
@@ -108,7 +78,7 @@ private struct ChartStaticShape: View, Equatable {
                         endPoint: .bottom
                     )
                 )
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
             }
 
             ForEach(trendRecords) { record in
@@ -116,7 +86,7 @@ private struct ChartStaticShape: View, Equatable {
                     x: .value("Time", record.timestamp),
                     y: .value("Value", record.value)
                 )
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
                 .foregroundStyle(lineColor.opacity(0.95))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             }
@@ -172,7 +142,7 @@ private struct ChartStaticShape: View, Equatable {
                 AxisTick().foregroundStyle(.clear)
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
-                        Text(date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+                        Text(date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
@@ -239,24 +209,20 @@ struct MiniChartView: View {
         let trendRecords = buildTrendRecords(from: records)
         self.trendRecords = trendRecords
 
-        let minRecord = records.min(by: { $0.price < $1.price }).map {
-            TrendRecord(timestamp: $0.timestamp, value: $0.price)
-        }
-        let maxRecord = records.max(by: { $0.price < $1.price }).map {
-            TrendRecord(timestamp: $0.timestamp, value: $0.price)
-        }
+        let minRecord = trendRecords.min(by: { $0.value < $1.value })
+        let maxRecord = trendRecords.max(by: { $0.value < $1.value })
         self.minRecord = minRecord
         self.maxRecord = maxRecord
         self.lastTrendRecord = trendRecords.last
 
-        let prices = records.map(\.price)
+        let prices = trendRecords.map(\.value)
         let minValue = prices.min() ?? 0
         let maxValue = prices.max() ?? 1
         let padding = max((maxValue - minValue) * 0.12, 0.5)
         self.yDomain = (minValue - padding)...(maxValue + padding)
 
-        if let first = records.first?.timestamp, let last = records.last?.timestamp {
-            let middle = records[records.count / 2].timestamp
+        if let first = trendRecords.first?.timestamp, let last = trendRecords.last?.timestamp {
+            let middle = trendRecords[trendRecords.count / 2].timestamp
             self.xMarks = [first, middle, last]
         } else {
             self.xMarks = []
@@ -363,28 +329,30 @@ struct MiniChartView: View {
             return HoverSelection(timestamp: last.timestamp, value: last.value)
         }
 
-        for index in 1..<trendRecords.count {
-            let upper = trendRecords[index]
-            let lower = trendRecords[index - 1]
+        var lowerBound = 0
+        var upperBound = trendRecords.count - 1
 
-            if date <= upper.timestamp {
-                let total = upper.timestamp.timeIntervalSince(lower.timestamp)
-                guard total > 0 else {
-                    return HoverSelection(timestamp: upper.timestamp, value: upper.value)
-                }
-
-                let progress = date.timeIntervalSince(lower.timestamp) / total
-                let value = lower.value + (upper.value - lower.value) * progress
-                return HoverSelection(timestamp: date, value: value)
+        while lowerBound + 1 < upperBound {
+            let middle = (lowerBound + upperBound) / 2
+            if trendRecords[middle].timestamp <= date {
+                lowerBound = middle
+            } else {
+                upperBound = middle
             }
         }
 
-        return HoverSelection(timestamp: last.timestamp, value: last.value)
+        let lowerRecord = trendRecords[lowerBound]
+        let upperRecord = trendRecords[upperBound]
+        let lowerDelta = abs(lowerRecord.timestamp.timeIntervalSince(date))
+        let upperDelta = abs(upperRecord.timestamp.timeIntervalSince(date))
+        let selectedRecord = lowerDelta <= upperDelta ? lowerRecord : upperRecord
+
+        return HoverSelection(timestamp: selectedRecord.timestamp, value: selectedRecord.value)
     }
 
     private func hoverLabel(timestamp: Date, valueText: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(timestamp, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+            Text(timestamp, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
                 .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
 

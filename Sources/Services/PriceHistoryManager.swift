@@ -8,9 +8,11 @@ class PriceHistoryManager {
     private let positionURL: URL
     private let settingsURL: URL
     private let alertsURL: URL
+    private let percentageAlertsURL: URL
     private(set) var position: PositionInfo?
     private(set) var settings: AppSettings = AppSettings()
     private(set) var alerts: [PriceAlert] = []
+    private(set) var percentageAlerts: [PercentageAlert] = []
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -20,10 +22,12 @@ class PriceHistoryManager {
         positionURL = dir.appendingPathComponent("position.json")
         settingsURL = dir.appendingPathComponent("settings.json")
         alertsURL = dir.appendingPathComponent("alerts.json")
+        percentageAlertsURL = dir.appendingPathComponent("percentageAlerts.json")
         loadHistory()
         loadPosition()
         loadSettings()
         loadAlerts()
+        loadPercentageAlerts()
         migrateFromUserDefaultsIfNeeded()
         cleanupAllSources()
     }
@@ -133,6 +137,41 @@ class PriceHistoryManager {
         guard let data = try? Data(contentsOf: alertsURL) else { return }
         if let loaded = try? JSONDecoder().decode([PriceAlert].self, from: data) {
             alerts = loaded
+        }
+    }
+
+    // MARK: - Percentage Alerts
+
+    func savePercentageAlerts(_ list: [PercentageAlert]) {
+        percentageAlerts = list
+        if let data = try? JSONEncoder().encode(list) {
+            try? data.write(to: percentageAlertsURL, options: .atomic)
+        }
+    }
+
+    func addPercentageAlert(_ alert: PercentageAlert) {
+        percentageAlerts.append(alert)
+        savePercentageAlerts(percentageAlerts)
+    }
+
+    func removePercentageAlert(id: String) {
+        percentageAlerts.removeAll { $0.id == id }
+        savePercentageAlerts(percentageAlerts)
+    }
+
+    func resetPercentageAlert(id: String) {
+        if let idx = percentageAlerts.firstIndex(where: { $0.id == id }) {
+            percentageAlerts[idx].triggered = false
+            percentageAlerts[idx].lastTriggeredAt = nil
+            percentageAlerts[idx].wasConditionMet = false
+            savePercentageAlerts(percentageAlerts)
+        }
+    }
+
+    private func loadPercentageAlerts() {
+        guard let data = try? Data(contentsOf: percentageAlertsURL) else { return }
+        if let loaded = try? JSONDecoder().decode([PercentageAlert].self, from: data) {
+            percentageAlerts = loaded
         }
     }
 
