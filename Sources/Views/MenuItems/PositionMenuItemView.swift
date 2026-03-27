@@ -4,7 +4,15 @@ import SwiftUI
 // MARK: - Base class for editable menu item views (handles focus & paste in NSMenu)
 
 class EditableMenuItemView: NSView {
-    init(contentView: NSView, minWidth: CGFloat) {
+    fileprivate let hostedContentView: NSView
+    fileprivate let minWidth: CGFloat
+    private let dynamicallyResizes: Bool
+    private var isUpdatingLayoutSize = false
+
+    init(contentView: NSView, minWidth: CGFloat, dynamicallyResizes: Bool = false) {
+        self.hostedContentView = contentView
+        self.minWidth = minWidth
+        self.dynamicallyResizes = dynamicallyResizes
         super.init(frame: .zero)
         let size = contentView.fittingSize
         self.frame = NSRect(x: 0, y: 0, width: max(size.width, minWidth), height: size.height)
@@ -19,12 +27,8 @@ class EditableMenuItemView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let submenuWindow = window else { return }
-        var frame = submenuWindow.frame
-        frame.origin.x += 8
-        submenuWindow.setFrame(frame, display: false)
-        DispatchQueue.main.async {
-            submenuWindow.makeKey()
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeKey()
         }
     }
 
@@ -49,6 +53,34 @@ class EditableMenuItemView: NSView {
             return NSApp.sendAction(sel, to: nil, from: self)
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    override func layout() {
+        super.layout()
+        guard dynamicallyResizes else { return }
+        updateLayoutSizeIfNeeded()
+    }
+
+    fileprivate func updateLayoutSizeIfNeeded() {
+        guard !isUpdatingLayoutSize else { return }
+        isUpdatingLayoutSize = true
+        defer { isUpdatingLayoutSize = false }
+
+        let size = hostedContentView.fittingSize
+        let targetSize = NSSize(width: max(size.width, minWidth), height: size.height)
+        guard abs(frame.width - targetSize.width) > 0.5 || abs(frame.height - targetSize.height) > 0.5 else { return }
+
+        frame.size = targetSize
+        hostedContentView.frame = bounds
+
+        if let submenuWindow = window {
+            var windowFrame = submenuWindow.frame
+            let deltaHeight = targetSize.height - windowFrame.height
+            windowFrame.size.width = targetSize.width
+            windowFrame.size.height = targetSize.height
+            windowFrame.origin.y -= deltaHeight
+            submenuWindow.setFrame(windowFrame, display: true, animate: true)
+        }
     }
 }
 
@@ -82,6 +114,9 @@ private func segmentedPicker<T: Hashable>(
 // MARK: - Main menu row (read-only display)
 
 class PositionDisplayView: NSView {
+    private var trackingArea: NSTrackingArea?
+    private let onHover: (Bool) -> Void
+    private let onActivate: () -> Void
     private let titleLabel = NSTextField(labelWithString: "我的持仓")
     private let gramsLabel = NSTextField(labelWithString: "")
     private let avgPriceLabel = NSTextField(labelWithString: "")
@@ -89,13 +124,35 @@ class PositionDisplayView: NSView {
     private let rateLabel = NSTextField(labelWithString: "")
     private let trailingStack = NSStackView()
 
-    init(position: PositionInfo, currentPrice: Double?) {
+    init(
+        position: PositionInfo,
+        currentPrice: Double?,
+        onHover: @escaping (Bool) -> Void = { _ in },
+        onActivate: @escaping () -> Void = {}
+    ) {
+        self.onHover = onHover
+        self.onActivate = onActivate
         super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 44))
         setupView()
         update(position: position, currentPrice: currentPrice)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        if let trackingArea { addTrackingArea(trackingArea) }
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover(true) }
+    override func mouseExited(with event: NSEvent) { onHover(false) }
+    override func mouseDown(with event: NSEvent) { onActivate() }
 
     func update(position: PositionInfo, currentPrice: Double?) {
         gramsLabel.stringValue = "\(String(format: "%.2f", position.grams))克"
@@ -172,10 +229,13 @@ class PositionDisplayView: NSView {
 class PositionChartMenuItemView: NSView {
     private let hostingView: NSHostingView<PositionChartPanelContent>
 
-    init(position: PositionInfo, currentPrice: Double, records: [PriceRecord]) {
-        let profitRecords = records.map { record in
-            PriceRecord(timestamp: record.timestamp, price: position.profit(currentPrice: record.price))
-        }
+    init(
+        position: PositionInfo,
+        currentPrice: Double,
+        profitRecords: [PriceRecord],
+        isLoading: Bool = false,
+        emptyMessage: String? = nil
+    ) {
         let currentProfit = position.profit(currentPrice: currentPrice)
         let currentRate = position.profitRate(currentPrice: currentPrice)
 
@@ -184,7 +244,9 @@ class PositionChartMenuItemView: NSView {
             currentPrice: currentPrice,
             currentProfit: currentProfit,
             currentRate: currentRate,
-            profitRecords: profitRecords
+            profitRecords: profitRecords,
+            isLoading: isLoading,
+            emptyMessage: emptyMessage
         ))
         super.init(frame: .zero)
         let fittingSize = hostingView.fittingSize
@@ -195,10 +257,13 @@ class PositionChartMenuItemView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(position: PositionInfo, currentPrice: Double, records: [PriceRecord]) {
-        let profitRecords = records.map { record in
-            PriceRecord(timestamp: record.timestamp, price: position.profit(currentPrice: record.price))
-        }
+    func update(
+        position: PositionInfo,
+        currentPrice: Double,
+        profitRecords: [PriceRecord],
+        isLoading: Bool = false,
+        emptyMessage: String? = nil
+    ) {
         let currentProfit = position.profit(currentPrice: currentPrice)
         let currentRate = position.profitRate(currentPrice: currentPrice)
 
@@ -207,13 +272,133 @@ class PositionChartMenuItemView: NSView {
             currentPrice: currentPrice,
             currentProfit: currentProfit,
             currentRate: currentRate,
-            profitRecords: profitRecords
+            profitRecords: profitRecords,
+            isLoading: isLoading,
+            emptyMessage: emptyMessage
         )
 
         let fittingSize = hostingView.fittingSize
         frame.size = NSSize(width: fittingSize.width, height: fittingSize.height)
         hostingView.frame = bounds
         needsDisplay = true
+    }
+}
+
+class PositionDetailPanelView: NSView {
+    private let contentWidth: CGFloat = 320
+    private let editorView: PositionEditorView
+    private let dividerContainer = NSView()
+    private let divider = NSBox()
+    private var chartView: PositionChartMenuItemView?
+
+    init(position: PositionInfo?, allSources: [GoldPriceSource]) {
+        self.editorView = PositionEditorView(position: position, allSources: allSources)
+        super.init(frame: .zero)
+
+        wantsLayer = true
+        editorView.autoresizingMask = [.width]
+        addSubview(editorView)
+
+        dividerContainer.autoresizingMask = [.width]
+        divider.boxType = .separator
+        divider.autoresizingMask = [.width]
+        dividerContainer.addSubview(divider)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func updateChart(
+        position: PositionInfo?,
+        currentPrice: Double?,
+        profitRecords: [PriceRecord],
+        isLoading: Bool = false,
+        emptyMessage: String? = nil
+    ) {
+        guard let position, let currentPrice else {
+            chartView?.removeFromSuperview()
+            chartView = nil
+            dividerContainer.removeFromSuperview()
+            rebuildLayout()
+            return
+        }
+
+        if let chartView {
+            chartView.update(
+                position: position,
+                currentPrice: currentPrice,
+                profitRecords: profitRecords,
+                isLoading: isLoading,
+                emptyMessage: emptyMessage
+            )
+        } else {
+            let view = PositionChartMenuItemView(
+                position: position,
+                currentPrice: currentPrice,
+                profitRecords: profitRecords,
+                isLoading: isLoading,
+                emptyMessage: emptyMessage
+            )
+            view.autoresizingMask = [.width]
+            addSubview(view)
+            chartView = view
+        }
+
+        if dividerContainer.superview == nil {
+            addSubview(dividerContainer)
+        }
+
+        rebuildLayout()
+    }
+
+    override var fittingSize: NSSize {
+        preferredPanelSize()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        preferredPanelSize()
+    }
+
+    func preferredPanelSize() -> NSSize {
+        NSSize(width: contentWidth, height: calculatedHeight())
+    }
+
+    private func calculatedHeight() -> CGFloat {
+        let editorHeight = measuredHeight(of: editorView)
+        let chartHeight = chartView.map(measuredHeight(of:)) ?? 0
+        let dividerHeight: CGFloat = chartView == nil ? 0 : 9
+        return chartHeight + dividerHeight + editorHeight
+    }
+
+    private func rebuildLayout() {
+        let chartHeight = chartView.map(measuredHeight(of:)) ?? 0
+        let editorHeight = measuredHeight(of: editorView)
+        let dividerHeight: CGFloat = chartView == nil ? 0 : 9
+        let totalHeight = chartHeight + dividerHeight + editorHeight
+
+        frame = NSRect(x: 0, y: 0, width: contentWidth, height: totalHeight)
+
+        var currentY = totalHeight
+
+        if let chartView {
+            currentY -= chartHeight
+            chartView.frame = NSRect(x: 0, y: currentY, width: contentWidth, height: chartHeight)
+
+            currentY -= dividerHeight
+            dividerContainer.frame = NSRect(x: 0, y: currentY, width: contentWidth, height: dividerHeight)
+            divider.frame = NSRect(x: 14, y: 4, width: contentWidth - 28, height: 1)
+        }
+
+        editorView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: editorHeight)
+        needsLayout = true
+    }
+
+    private func measuredHeight(of view: NSView) -> CGFloat {
+        view.layoutSubtreeIfNeeded()
+        let fitting = view.fittingSize.height
+        if fitting > 1 { return fitting }
+        let intrinsic = view.intrinsicContentSize.height
+        if intrinsic > 1 { return intrinsic }
+        return max(view.frame.height, 1)
     }
 }
 
@@ -286,6 +471,8 @@ private struct PositionChartPanelContent: View {
     let currentProfit: Double
     let currentRate: Double
     let profitRecords: [PriceRecord]
+    let isLoading: Bool
+    let emptyMessage: String?
 
     private var isUp: Bool {
         currentProfit >= 0
@@ -307,16 +494,10 @@ private struct PositionChartPanelContent: View {
         VStack(spacing: 8) {
             HStack {
                 Text("我的持仓")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.secondary)
 
-                Spacer()
-
-                if let source = position.source {
-                    Text(source.rawValue)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
+                Spacer(minLength: 0)
             }
 
             HStack(alignment: .firstTextBaseline) {
@@ -372,6 +553,16 @@ private struct PositionChartPanelContent: View {
                     },
                     currentHintText: "\(currentProfit >= 0 ? "+" : "")\(String(format: "%.2f", currentProfit)) 元"
                 )
+            } else if isLoading {
+                Text("加载中...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(height: 60)
+            } else if let emptyMessage {
+                Text(emptyMessage)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(height: 60)
             } else {
                 Text("数据积累中...")
                     .font(.system(size: 10))
@@ -412,34 +603,38 @@ private struct PositionEditorContent: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("持仓设置")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("持仓设置")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("持仓克数")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                TextField("例如: 10.00", text: $gramsText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13))
-                    .frame(width: 120)
+                Spacer()
+
+                if saved {
+                    Text("已保存")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.goldGreen)
+                }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("买入均价 (元/克)")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                TextField("例如: 980.50", text: $avgPriceText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13))
-                    .frame(width: 120)
+            HStack(alignment: .top, spacing: 10) {
+                positionField(
+                    title: "买入均价 (元/克)",
+                    placeholder: "例如: 980.50",
+                    text: $avgPriceText
+                )
+
+                positionField(
+                    title: "持仓克数",
+                    placeholder: "例如: 10.00",
+                    text: $gramsText
+                )
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text("收益计算相对数据源")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 segmentedPicker(
                     items: allSources,
@@ -449,13 +644,11 @@ private struct PositionEditorContent: View {
                 )
             }
 
+            Divider()
+                .opacity(0.65)
+
             HStack {
                 Spacer()
-                if saved {
-                    Text("已保存 ✓")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.goldGreen)
-                }
                 Button("保存") {
                     guard let grams = Double(gramsText), let avgPrice = Double(avgPriceText),
                           grams > 0, avgPrice > 0 else { return }
@@ -475,7 +668,20 @@ private struct PositionEditorContent: View {
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 320, alignment: .leading)
+    }
+
+    private func positionField(title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -539,7 +745,7 @@ private struct SettingsEditorContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("偏好设置")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.primary)
 
             settingsTabs
@@ -692,7 +898,7 @@ private struct SettingsEditorContent: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("状态栏显示当日涨跌")
+                Text("状态栏显示当日金价涨跌")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                 segmentedPicker(
@@ -713,7 +919,7 @@ private struct SettingsEditorContent: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("状态栏显示收益")
+                Text("状态栏显示总收益")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                 segmentedPicker(
@@ -826,12 +1032,41 @@ private struct SettingsEditorContent: View {
             defaultAlertRepeatInterval: defaultAlertRepeatInterval
         )
         PriceHistoryManager.shared.saveSettings(settings)
+        syncExistingAlerts(with: settings)
         onSourceChange(selectedSource)
         onSave()
         saved = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             saved = false
         }
+    }
+
+    private func syncExistingAlerts(with settings: AppSettings) {
+        let historyManager = PriceHistoryManager.shared
+
+        let syncedPriceAlerts = historyManager.alerts.map { alert in
+            var updated = alert
+            updated.repeatMode = settings.defaultAlertRepeatMode
+            updated.repeatInterval = settings.defaultAlertRepeatInterval
+            return updated
+        }
+        historyManager.saveAlerts(syncedPriceAlerts)
+
+        let syncedPercentageAlerts = historyManager.percentageAlerts.map { alert in
+            var updated = alert
+            updated.repeatMode = settings.defaultAlertRepeatMode
+            updated.repeatInterval = settings.defaultAlertRepeatInterval
+            return updated
+        }
+        historyManager.savePercentageAlerts(syncedPercentageAlerts)
+
+        let syncedProfitAlerts = historyManager.profitAlerts.map { alert in
+            var updated = alert
+            updated.repeatMode = settings.defaultAlertRepeatMode
+            updated.repeatInterval = settings.defaultAlertRepeatInterval
+            return updated
+        }
+        historyManager.saveProfitAlerts(syncedProfitAlerts)
     }
 
     private func syncRefreshIntervalInput() {
@@ -857,6 +1092,22 @@ class PercentageAlertEditorView: EditableMenuItemView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
+class ProfitAlertEditorView: EditableMenuItemView {
+    private let hostingView: NSHostingView<ProfitAlertEditorContent>
+
+    init() {
+        let hostingView = NSHostingView(rootView: ProfitAlertEditorContent(onContentChange: {}))
+        self.hostingView = hostingView
+        super.init(contentView: hostingView, minWidth: 300)
+        hostingView.rootView = ProfitAlertEditorContent(onContentChange: { [weak self] in
+            DispatchQueue.main.async {
+                self?.updateLayoutSizeIfNeeded()
+            }
+        })
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
 private struct AlertEditorContent: View {
     @State private var alerts: [PriceAlert] = PriceHistoryManager.shared.alerts
     @State private var selectedSource: GoldPriceSource = .jdZsFinance
@@ -867,7 +1118,7 @@ private struct AlertEditorContent: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("价格提醒")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
 
                 Spacer()
@@ -948,6 +1199,7 @@ private struct AlertEditorContent: View {
         }
         .padding(14)
         .frame(width: 300)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var defaultRepeatSummary: String {
@@ -1050,7 +1302,7 @@ private struct PercentageAlertEditorContent: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("涨跌幅提醒")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
 
                 Spacer()
@@ -1097,13 +1349,23 @@ private struct PercentageAlertEditorContent: View {
         }
     }
 
+    private var netChangeAlerts: [PercentageAlert] {
+        alerts
+            .filter { $0.metric == .netChange }
+            .sorted { $0.normalizedTargetPercent < $1.normalizedTargetPercent }
+    }
+
+    private var intradayRangeAlerts: [PercentageAlert] {
+        alerts
+            .filter { $0.metric == .intradayRange }
+            .sorted { $0.normalizedTargetPercent < $1.normalizedTargetPercent }
+    }
+
     private var percentageAlertTabs: some View {
         HStack(spacing: 18) {
             ForEach(PercentageAlertTab.allCases, id: \.self) { tab in
                 Button(action: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        selectedTab = tab
-                    }
+                    selectedTab = tab
                 }) {
                     VStack(spacing: 6) {
                         Text(tab.rawValue)
@@ -1138,21 +1400,22 @@ private struct PercentageAlertEditorContent: View {
         description: String
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            let metricAlerts = alerts
-                .filter { $0.metric == metric }
-                .sorted { $0.normalizedTargetPercent < $1.normalizedTargetPercent }
+            let metricAlerts = metric == .netChange ? netChangeAlerts : intradayRangeAlerts
 
             if metricAlerts.isEmpty {
                 Text("暂无提醒规则")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
+                    .frame(height: sharedMetricListHeight, alignment: .center)
+            } else if metricAlerts.count <= 4 {
+                percentageAlertSection(title: metric.rawValue, alerts: metricAlerts)
+                    .frame(height: sharedMetricListHeight, alignment: .top)
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
                     percentageAlertSection(title: metric.rawValue, alerts: metricAlerts)
                 }
-                .frame(height: 100)
+                .frame(height: sharedMetricListHeight)
             }
 
             Divider()
@@ -1190,6 +1453,15 @@ private struct PercentageAlertEditorContent: View {
                 .controlSize(.small)
             }
         }
+    }
+
+    private var sharedMetricListHeight: CGFloat {
+        let maxCount = max(netChangeAlerts.count, intradayRangeAlerts.count)
+        let rowHeight: CGFloat = 28
+        let sectionHeaderHeight: CGFloat = 18
+        let verticalPadding: CGFloat = 8
+        let contentHeight = CGFloat(maxCount) * rowHeight + sectionHeaderHeight + verticalPadding
+        return min(max(contentHeight, 44), 120)
     }
 
     private func percentageAlertSection(title: String, alerts: [PercentageAlert]) -> some View {
@@ -1266,6 +1538,299 @@ private struct PercentageAlertEditorContent: View {
         )
         PriceHistoryManager.shared.savePercentageAlerts(alerts)
         targetText.wrappedValue = ""
+    }
+}
+
+private struct ProfitAlertEditorContent: View {
+    private enum ProfitAlertTab: String, CaseIterable {
+        case profit = "浮盈"
+        case loss = "浮亏"
+
+        var kind: ProfitAlertKind {
+            switch self {
+            case .profit: return .profit
+            case .loss: return .loss
+            }
+        }
+    }
+
+    @State private var alerts: [ProfitAlert] = PriceHistoryManager.shared.profitAlerts
+    @State private var selectedTab: ProfitAlertTab = .profit
+    @State private var selectedMetric: ProfitAlertMetric = .amount
+    @State private var targetText: String = ""
+
+    let onContentChange: () -> Void
+
+    private var position: PositionInfo? {
+        PriceHistoryManager.shared.position
+    }
+
+    private var positionSource: GoldPriceSource? {
+        position?.source
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("收益提醒")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text(compactRepeatSummary)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            profitAlertTabs
+
+            if let position {
+                metricEditorSection(position: position)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("请先设置持仓")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+
+                    Text("收益提醒依赖持仓克数、买入均价和收益计算相对数据源。")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+            }
+        }
+        .padding(14)
+        .frame(width: 300)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            onContentChange()
+        }
+        .onChange(of: alerts) { _ in
+            onContentChange()
+        }
+    }
+
+    private var compactRepeatSummary: String {
+        let settings = PriceHistoryManager.shared.settings
+        switch settings.defaultAlertRepeatMode {
+        case .rearmOnCross:
+            return "重新穿越"
+        case .recurring:
+            return "持续提醒 · \(settings.defaultAlertRepeatInterval.shortLabel)"
+        }
+    }
+
+    private var filteredAlerts: [ProfitAlert] {
+        alerts
+            .filter { $0.kind == selectedTab.kind }
+            .sorted {
+                if $0.metric == $1.metric {
+                    return $0.normalizedTargetValue < $1.normalizedTargetValue
+                }
+                return $0.metric.rawValue < $1.metric.rawValue
+            }
+    }
+
+    private var profitAlerts: [ProfitAlert] {
+        alerts.filter { $0.kind == .profit }
+    }
+
+    private var lossAlerts: [ProfitAlert] {
+        alerts.filter { $0.kind == .loss }
+    }
+
+    private var profitAlertTabs: some View {
+        HStack(spacing: 18) {
+            ForEach(ProfitAlertTab.allCases, id: \.self) { tab in
+                Button(action: {
+                    selectedTab = tab
+                }) {
+                    VStack(spacing: 6) {
+                        Text(tab.rawValue)
+                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .medium))
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+
+                        Rectangle()
+                            .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                            .frame(height: 2)
+                            .clipShape(Capsule())
+                    }
+                    .frame(width: 50)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+        .padding(.bottom, 2)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 0.5)
+        }
+    }
+
+    private func metricEditorSection(position: PositionInfo) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            let sourceName = positionSource?.rawValue ?? position.sourceRawValue
+
+            Text("当前持仓：\(sourceName)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+
+            if filteredAlerts.isEmpty {
+                Text("暂无提醒规则")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(height: sharedListHeight, alignment: .center)
+            } else if filteredAlerts.count <= 4 {
+                profitAlertSection(title: selectedTab.rawValue, alerts: filteredAlerts)
+                    .frame(height: sharedListHeight, alignment: .top)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    profitAlertSection(title: selectedTab.rawValue, alerts: filteredAlerts)
+                }
+                .frame(height: sharedListHeight)
+            }
+
+            Divider()
+
+            Text("添加提醒")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            segmentedPicker(
+                items: ProfitAlertMetric.allCases,
+                selected: selectedMetric,
+                label: { $0.rawValue },
+                onSelect: { selectedMetric = $0 }
+            )
+
+            HStack(spacing: 6) {
+                PastableTextField(
+                    text: $targetText,
+                    placeholder: selectedMetric == .amount ? "目标金额，如 100" : "目标百分比，如 2"
+                )
+                .frame(height: 22)
+
+                Text(selectedMetric == .amount ? "元" : "%")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+
+            Text(descriptionText)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+
+            HStack {
+                Spacer()
+                Button("添加") {
+                    appendAlert()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private var descriptionText: String {
+        switch (selectedTab.kind, selectedMetric) {
+        case (.profit, .amount):
+            return "浮盈金额达到你设置的目标值时提醒，只允许正数。"
+        case (.profit, .rate):
+            return "浮盈百分比达到你设置的目标值时提醒，只允许正数。"
+        case (.loss, .amount):
+            return "浮亏金额达到你设置的目标值时提醒，只允许正数。"
+        case (.loss, .rate):
+            return "浮亏百分比达到你设置的目标值时提醒，只允许正数。"
+        }
+    }
+
+    private var sharedListHeight: CGFloat {
+        let maxCount = max(profitAlerts.count, lossAlerts.count)
+        let rowHeight: CGFloat = 28
+        let sectionHeaderHeight: CGFloat = 18
+        let verticalPadding: CGFloat = 8
+        let contentHeight = CGFloat(maxCount) * rowHeight + sectionHeaderHeight + verticalPadding
+        return min(contentHeight, 120)
+    }
+
+    private func profitAlertSection(title: String, alerts: [ProfitAlert]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.leading, 2)
+
+            ForEach(alerts, id: \.id) { alert in
+                profitAlertRow(alert)
+            }
+        }
+    }
+
+    private func profitAlertRow(_ alert: ProfitAlert) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(alert.sourceRawValue)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.primary)
+
+                    Text("\(alert.kind.rawValue)\(alert.metric.shortTitle) \(alert.comparatorText)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(.primary)
+                }
+            }
+
+            Spacer()
+
+            if alert.triggered {
+                Button("重置") {
+                    PriceHistoryManager.shared.resetProfitAlert(id: alert.id)
+                    alerts = PriceHistoryManager.shared.profitAlerts
+                }
+                .font(.system(size: 10))
+                .foregroundColor(.orange)
+                .buttonStyle(.plain)
+            }
+
+            Button(action: {
+                PriceHistoryManager.shared.removeProfitAlert(id: alert.id)
+                alerts = PriceHistoryManager.shared.profitAlerts
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .background(Color.primary.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func appendAlert() {
+        let settings = PriceHistoryManager.shared.settings
+        guard let source = positionSource,
+              let target = Double(targetText.trimmingCharacters(in: .whitespacesAndNewlines)),
+              target > 0 else { return }
+
+        alerts.append(
+            ProfitAlert(
+                sourceRawValue: source.rawValue,
+                kind: selectedTab.kind,
+                metric: selectedMetric,
+                targetValue: abs(target),
+                repeatMode: settings.defaultAlertRepeatMode,
+                repeatInterval: settings.defaultAlertRepeatInterval
+            )
+        )
+        PriceHistoryManager.shared.saveProfitAlerts(alerts)
+        targetText = ""
     }
 }
 

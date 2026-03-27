@@ -3,13 +3,20 @@ import AppKit
 class PriceMenuItemView: NSView {
     private var trackingArea: NSTrackingArea?
     private let onHover: (Bool) -> Void
+    private let onActivate: () -> Void
     private let sourceLabel = NSTextField(labelWithString: "")
     private let priceLabel = NSTextField(labelWithString: "")
     private let changeIconLabel = NSTextField(labelWithString: "")
     private let changeRateLabel = NSTextField(labelWithString: "")
 
-    init(source: GoldPriceSource, info: PriceInfo, onHover: @escaping (Bool) -> Void = { _ in }) {
+    init(
+        source: GoldPriceSource,
+        info: PriceInfo,
+        onHover: @escaping (Bool) -> Void = { _ in },
+        onActivate: @escaping () -> Void = {}
+    ) {
         self.onHover = onHover
+        self.onActivate = onActivate
         super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
 
         setupView()
@@ -40,6 +47,7 @@ class PriceMenuItemView: NSView {
 
     override func mouseEntered(with event: NSEvent) { onHover(true) }
     override func mouseExited(with event: NSEvent) { onHover(false) }
+    override func mouseDown(with event: NSEvent) { onActivate() }
 
     private func setupView() {
         let container = NSStackView()

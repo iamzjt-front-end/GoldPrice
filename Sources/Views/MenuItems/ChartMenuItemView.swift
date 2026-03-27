@@ -2,19 +2,33 @@ import AppKit
 import SwiftUI
 
 extension Color {
-    static let goldGreen = Color(red: 99/255, green: 171/255, blue: 142/255)
+    static let goldGreen = Color(red: 75/255, green: 166/255, blue: 110/255)
 }
 
 extension NSColor {
-    static let goldGreen = NSColor(red: 99/255, green: 171/255, blue: 142/255, alpha: 1)
+    static let goldGreen = NSColor(red: 75/255, green: 166/255, blue: 110/255, alpha: 1)
 }
 
 class ChartMenuItemView: NSView {
     private let hostingView: NSHostingView<ChartPanelContent>
 
-    init(source: GoldPriceSource, info: PriceInfo, records: [PriceRecord]) {
+    init(
+        source: GoldPriceSource,
+        info: PriceInfo,
+        records: [PriceRecord],
+        chartHigh: Double? = nil,
+        chartLow: Double? = nil,
+        isLoading: Bool = false,
+        emptyMessage: String? = nil
+    ) {
         self.hostingView = NSHostingView(rootView: ChartPanelContent(
-            source: source, info: info, records: records
+            source: source,
+            info: info,
+            records: records,
+            chartHigh: chartHigh,
+            chartLow: chartLow,
+            isLoading: isLoading,
+            emptyMessage: emptyMessage
         ))
         super.init(frame: .zero)
 
@@ -27,16 +41,28 @@ class ChartMenuItemView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let submenuWindow = window else { return }
-        var frame = submenuWindow.frame
-        frame.origin.x += 8
-        submenuWindow.setFrame(frame, display: false)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(source: GoldPriceSource, info: PriceInfo, records: [PriceRecord]) {
-        hostingView.rootView = ChartPanelContent(source: source, info: info, records: records)
+    func update(
+        source: GoldPriceSource,
+        info: PriceInfo,
+        records: [PriceRecord],
+        chartHigh: Double? = nil,
+        chartLow: Double? = nil,
+        isLoading: Bool = false,
+        emptyMessage: String? = nil
+    ) {
+        hostingView.rootView = ChartPanelContent(
+            source: source,
+            info: info,
+            records: records,
+            chartHigh: chartHigh,
+            chartLow: chartLow,
+            isLoading: isLoading,
+            emptyMessage: emptyMessage
+        )
         let fittingSize = hostingView.fittingSize
         frame.size = NSSize(width: fittingSize.width, height: fittingSize.height)
         hostingView.frame = bounds
@@ -48,12 +74,30 @@ private struct ChartPanelContent: View {
     let source: GoldPriceSource
     let info: PriceInfo
     let records: [PriceRecord]
+    let chartHigh: Double?
+    let chartLow: Double?
+    let isLoading: Bool
+    let emptyMessage: String?
+
+    private var displayHigh: String {
+        if let chartHigh {
+            return String(format: "%.2f", chartHigh)
+        }
+        return info.dayHigh
+    }
+
+    private var displayLow: String {
+        if let chartLow {
+            return String(format: "%.2f", chartLow)
+        }
+        return info.dayLow
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             HStack {
                 Text(source.rawValue)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
             }
@@ -85,13 +129,13 @@ private struct ChartPanelContent: View {
                 }
             }
 
-            if info.dayHigh != "--" && info.dayLow != "--" {
+            if displayHigh != "--" && displayLow != "--" {
                 HStack(spacing: 14) {
                     HStack(spacing: 3) {
                         Text("高")
                             .font(.system(size: 12))
                             .foregroundColor(.red.opacity(0.8))
-                        Text(info.dayHigh)
+                        Text(displayHigh)
                             .font(.system(size: 13, weight: .medium, design: .monospaced))
                             .foregroundColor(.red)
                     }
@@ -99,7 +143,7 @@ private struct ChartPanelContent: View {
                         Text("低")
                             .font(.system(size: 12))
                             .foregroundColor(.goldGreen.opacity(0.8))
-                        Text(info.dayLow)
+                        Text(displayLow)
                             .font(.system(size: 13, weight: .medium, design: .monospaced))
                             .foregroundColor(.goldGreen)
                     }
@@ -116,6 +160,16 @@ private struct ChartPanelContent: View {
                     },
                     currentHintText: "\(info.formattedPrice) \(source.unit)"
                 )
+            } else if isLoading {
+                Text("加载中...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(height: 60)
+            } else if let emptyMessage {
+                Text(emptyMessage)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(height: 60)
             } else {
                 Text("数据积累中...")
                     .font(.system(size: 10))
@@ -123,7 +177,9 @@ private struct ChartPanelContent: View {
                     .frame(height: 60)
             }
         }
-        .padding(14)
-        .frame(width: 320)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
+        .frame(width: 320, height: 238, alignment: .topLeading)
     }
 }

@@ -157,7 +157,7 @@ class GoldPriceService: ObservableObject {
     // MARK: - Domestic: JD Minsheng
 
     private func fetchJDMsFinanceGoldPrice(completion: @escaping (PriceInfo?) -> Void) {
-        let urlString = "https://api.jdjygold.com/gw/generic/hj/h5/m/latestPrice?reqData={}"
+        let urlString = "https://api.jdjygold.com/gw/generic/hj/h5/m/latestPrice?reqData=%7B%7D"
         guard let url = URL(string: urlString) else {
             completion(nil)
             return

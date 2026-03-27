@@ -3,7 +3,7 @@ import Charts
 
 private extension Color {
     static let chartTipHigh = Color(red: 232 / 255, green: 84 / 255, blue: 79 / 255)
-    static let chartTipLow = Color(red: 99 / 255, green: 171 / 255, blue: 142 / 255)
+    static let chartTipLow = Color(red: 75 / 255, green: 166 / 255, blue: 110 / 255)
 }
 
 private struct TrendRecord: Identifiable, Equatable {
@@ -35,10 +35,26 @@ private func buildTrendRecords(from records: [PriceRecord]) -> [TrendRecord] {
         bucketedRecords[bucketIndex] = record
     }
 
-    return bucketedRecords
+    let rawMinRecord = records.min(by: { $0.price < $1.price })
+    let rawMaxRecord = records.max(by: { $0.price < $1.price })
+
+    var mergedRecords = bucketedRecords
         .keys
         .sorted()
         .compactMap { bucketedRecords[$0] }
+
+    if let rawMinRecord,
+       !mergedRecords.contains(where: { $0.timestamp == rawMinRecord.timestamp && $0.price == rawMinRecord.price }) {
+        mergedRecords.append(rawMinRecord)
+    }
+
+    if let rawMaxRecord,
+       !mergedRecords.contains(where: { $0.timestamp == rawMaxRecord.timestamp && $0.price == rawMaxRecord.price }) {
+        mergedRecords.append(rawMaxRecord)
+    }
+
+    return mergedRecords
+        .sorted { $0.timestamp < $1.timestamp }
         .map { TrendRecord(timestamp: $0.timestamp, value: $0.price) }
 }
 
@@ -176,6 +192,7 @@ struct MiniChartView: View {
     private let lineColor: Color
 
     @State private var hoverSelection: HoverSelection?
+    @State private var axisLabelPositions: [TimeInterval: CGFloat] = [:]
 
     init(
         records: [PriceRecord],
@@ -216,111 +233,130 @@ struct MiniChartView: View {
     }
 
     var body: some View {
-        ChartStaticShape(
-            trendRecords: trendRecords,
-            minRecord: minRecord,
-            maxRecord: maxRecord,
-            lastTrendRecord: lastTrendRecord,
-            yDomain: yDomain,
-            lineColor: lineColor,
-            currentHintText: currentHintText
-        )
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                let plotFrame = geometry[proxy.plotAreaFrame]
+        VStack(spacing: 0) {
+            ChartStaticShape(
+                trendRecords: trendRecords,
+                minRecord: minRecord,
+                maxRecord: maxRecord,
+                lastTrendRecord: lastTrendRecord,
+                yDomain: yDomain,
+                lineColor: lineColor,
+                currentHintText: currentHintText
+            )
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    let plotFrame = geometry[proxy.plotAreaFrame]
 
-                ZStack(alignment: .topLeading) {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            switch phase {
-                            case .active(let location):
-                                guard plotFrame.contains(location) else {
+                    ZStack(alignment: .topLeading) {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .onAppear {
+                                updateAxisLabelPositions(using: proxy, plotFrame: plotFrame)
+                            }
+                            .onChange(of: geometry.size) { _ in
+                                updateAxisLabelPositions(using: proxy, plotFrame: plotFrame)
+                            }
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    guard plotFrame.contains(location) else {
+                                        hoverSelection = nil
+                                        return
+                                    }
+
+                                    let relativeX = location.x - plotFrame.origin.x
+                                    guard let hoveredDate = proxy.value(atX: relativeX, as: Date.self),
+                                          let nextSelection = interpolatedSelection(for: hoveredDate) else {
+                                        hoverSelection = nil
+                                        return
+                                    }
+
+                                    if shouldUpdateHoverSelection(to: nextSelection) {
+                                        hoverSelection = nextSelection
+                                    }
+                                case .ended:
                                     hoverSelection = nil
-                                    return
                                 }
+                            }
 
-                                let relativeX = location.x - plotFrame.origin.x
-                                guard let hoveredDate = proxy.value(atX: relativeX, as: Date.self),
-                                      let nextSelection = interpolatedSelection(for: hoveredDate) else {
-                                    hoverSelection = nil
-                                    return
-                                }
+                        Group {
+                            if let hoverSelection,
+                               let x = proxy.position(forX: hoverSelection.timestamp),
+                               let y = proxy.position(forY: hoverSelection.value) {
+                                let chartX = plotFrame.origin.x + x
+                                let chartY = plotFrame.origin.y + y
+                                let tooltipY = chartY < plotFrame.midY ? chartY + 28 : chartY - 28
+                                let clampedTooltipX = min(max(chartX, plotFrame.minX + 52), plotFrame.maxX - 52)
 
-                                if shouldUpdateHoverSelection(to: nextSelection) {
-                                    hoverSelection = nextSelection
+                                Path { path in
+                                    path.move(to: CGPoint(x: chartX, y: plotFrame.minY))
+                                    path.addLine(to: CGPoint(x: chartX, y: plotFrame.maxY))
                                 }
-                            case .ended:
-                                hoverSelection = nil
+                                .stroke(Color.primary.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                .allowsHitTesting(false)
+
+                                Circle()
+                                    .fill(lineColor)
+                                    .frame(width: 8, height: 8)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.white.opacity(0.9), lineWidth: 2)
+                                    )
+                                    .position(x: chartX, y: chartY)
+                                    .allowsHitTesting(false)
+
+                                hoverLabel(timestamp: hoverSelection.timestamp, valueText: hoverValueFormatter(hoverSelection.value))
+                                    .position(x: clampedTooltipX, y: tooltipY)
+                                    .allowsHitTesting(false)
                             }
                         }
+                        .zIndex(2)
 
-                    Group {
-                        if let hoverSelection,
-                           let x = proxy.position(forX: hoverSelection.timestamp),
-                           let y = proxy.position(forY: hoverSelection.value) {
-                            let chartX = plotFrame.origin.x + x
-                            let chartY = plotFrame.origin.y + y
-                            let tooltipY = chartY < plotFrame.midY ? chartY + 28 : chartY - 28
-                            let clampedTooltipX = min(max(chartX, plotFrame.minX + 52), plotFrame.maxX - 52)
+                        Group {
+                            if let minRecord,
+                               let x = proxy.position(forX: minRecord.timestamp),
+                               let y = proxy.position(forY: minRecord.value) {
+                                let chartX = plotFrame.origin.x + x
+                                let chartY = plotFrame.origin.y + y
+                                let labelX = min(max(chartX, plotFrame.minX + 44), plotFrame.maxX - 44)
+                                let labelY = chartY + 18
 
-                            Path { path in
-                                path.move(to: CGPoint(x: chartX, y: plotFrame.minY))
-                                path.addLine(to: CGPoint(x: chartX, y: plotFrame.maxY))
+                                tipLabel(text: String(format: "%.2f", minRecord.value), color: .chartTipLow)
+                                    .position(x: labelX, y: labelY)
+                                    .allowsHitTesting(false)
                             }
-                            .stroke(Color.primary.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .allowsHitTesting(false)
-
-                            Circle()
-                                .fill(lineColor)
-                                .frame(width: 8, height: 8)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.white.opacity(0.9), lineWidth: 2)
-                                )
-                                .position(x: chartX, y: chartY)
-                                .allowsHitTesting(false)
-
-                            hoverLabel(timestamp: hoverSelection.timestamp, valueText: hoverValueFormatter(hoverSelection.value))
-                                .position(x: clampedTooltipX, y: tooltipY)
-                                .allowsHitTesting(false)
                         }
+                        .zIndex(1)
                     }
-                    .zIndex(2)
-
-                    Group {
-                        if let minRecord,
-                           let x = proxy.position(forX: minRecord.timestamp),
-                           let y = proxy.position(forY: minRecord.value) {
-                            let chartX = plotFrame.origin.x + x
-                            let chartY = plotFrame.origin.y + y
-                            let labelX = min(max(chartX, plotFrame.minX + 44), plotFrame.maxX - 44)
-                            let labelY = chartY + 18
-
-                            tipLabel(text: String(format: "%.2f", minRecord.value), color: .chartTipLow)
-                                .position(x: labelX, y: labelY)
-                                .allowsHitTesting(false)
-                        }
+                    .transaction { transaction in
+                        transaction.animation = nil
                     }
-                    .zIndex(1)
                 }
-                .transaction { transaction in
-                    transaction.animation = nil
-                }
+            }
+            .frame(height: 94)
+
+            if xMarks.count == 3 {
+                axisLabelsRow
+                    .frame(height: 22)
+                    .padding(.top, 7)
             }
         }
-        .frame(height: 94)
+    }
 
-        if xMarks.count == 3 {
-            HStack {
-                axisLabel(xMarks[0])
-                Spacer()
-                axisLabel(xMarks[1])
-                Spacer()
-                axisLabel(xMarks[2])
+    private var axisLabelsRow: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(xMarks.enumerated()), id: \.offset) { _, mark in
+                    let fallbackX = geometry.size.width / CGFloat(max(xMarks.count - 1, 1)) * CGFloat(xMarks.firstIndex(of: mark) ?? 0)
+                    let x = axisLabelPositions[mark.timeIntervalSince1970] ?? fallbackX
+                    let clampedX = min(max(x, 22), geometry.size.width - 22)
+
+                    axisLabel(mark)
+                        .frame(width: 44)
+                        .position(x: clampedX, y: 11)
+                }
             }
-            .padding(.top, 4)
         }
     }
 
@@ -398,5 +434,17 @@ struct MiniChartView: View {
         Text(date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
             .font(.system(size: 9))
             .foregroundColor(.secondary)
+    }
+
+    private func updateAxisLabelPositions(using proxy: ChartProxy, plotFrame: CGRect) {
+        var nextPositions: [TimeInterval: CGFloat] = [:]
+        for mark in xMarks {
+            if let x = proxy.position(forX: mark) {
+                nextPositions[mark.timeIntervalSince1970] = plotFrame.origin.x + x
+            }
+        }
+        if !nextPositions.isEmpty {
+            axisLabelPositions = nextPositions
+        }
     }
 }

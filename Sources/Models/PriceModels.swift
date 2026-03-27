@@ -395,6 +395,122 @@ struct PercentageAlert: Codable, Equatable {
 
 // MARK: - Position (持仓)
 
+enum ProfitAlertKind: String, Codable, CaseIterable {
+    case profit = "浮盈"
+    case loss = "浮亏"
+}
+
+enum ProfitAlertMetric: String, Codable, CaseIterable {
+    case amount = "达到目标金额"
+    case rate = "达到目标百分比"
+
+    var shortTitle: String {
+        switch self {
+        case .amount:
+            return "金额"
+        case .rate:
+            return "百分比"
+        }
+    }
+}
+
+struct ProfitAlert: Codable, Equatable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sourceRawValue
+        case kind
+        case metric
+        case targetValue
+        case triggered
+        case repeatMode
+        case repeatInterval
+        case lastTriggeredAt
+        case wasConditionMet
+    }
+
+    var id: String = UUID().uuidString
+    var sourceRawValue: String
+    var kind: ProfitAlertKind
+    var metric: ProfitAlertMetric
+    var targetValue: Double
+    var triggered: Bool = false
+    var repeatMode: AlertRepeatMode = .recurring
+    var repeatInterval: AlertRepeatInterval = .fiveMinutes
+    var lastTriggeredAt: Date? = nil
+    var wasConditionMet: Bool = false
+
+    init(
+        id: String = UUID().uuidString,
+        sourceRawValue: String,
+        kind: ProfitAlertKind,
+        metric: ProfitAlertMetric,
+        targetValue: Double,
+        triggered: Bool = false,
+        repeatMode: AlertRepeatMode = .recurring,
+        repeatInterval: AlertRepeatInterval = .fiveMinutes,
+        lastTriggeredAt: Date? = nil,
+        wasConditionMet: Bool = false
+    ) {
+        self.id = id
+        self.sourceRawValue = sourceRawValue
+        self.kind = kind
+        self.metric = metric
+        self.targetValue = abs(targetValue)
+        self.triggered = triggered
+        self.repeatMode = repeatMode
+        self.repeatInterval = repeatInterval
+        self.lastTriggeredAt = lastTriggeredAt
+        self.wasConditionMet = wasConditionMet
+    }
+
+    var source: GoldPriceSource? {
+        GoldPriceSource(rawValue: sourceRawValue)
+    }
+
+    var normalizedTargetValue: Double {
+        abs(targetValue)
+    }
+
+    var comparatorText: String {
+        switch metric {
+        case .amount:
+            return "≥ \(ProfitAlert.formattedAmount(normalizedTargetValue))"
+        case .rate:
+            return "≥ \(ProfitAlert.formattedPercent(normalizedTargetValue))"
+        }
+    }
+
+    var repeatSummary: String {
+        switch repeatMode {
+        case .rearmOnCross:
+            return "重新穿越阈值后再次提醒"
+        case .recurring:
+            return "持续满足条件时\(repeatInterval.description)"
+        }
+    }
+
+    func isConditionMet(currentProfit: Double, currentRate: Double) -> Bool {
+        switch (kind, metric) {
+        case (.profit, .amount):
+            return currentProfit >= normalizedTargetValue
+        case (.loss, .amount):
+            return currentProfit <= -normalizedTargetValue
+        case (.profit, .rate):
+            return currentRate >= normalizedTargetValue
+        case (.loss, .rate):
+            return currentRate <= -normalizedTargetValue
+        }
+    }
+
+    static func formattedAmount(_ value: Double) -> String {
+        "\(String(format: "%.2f", value))元"
+    }
+
+    static func formattedPercent(_ value: Double) -> String {
+        "\(String(format: "%.2f", value))%"
+    }
+}
+
 struct PositionInfo: Codable, Equatable {
     var grams: Double
     var avgPrice: Double

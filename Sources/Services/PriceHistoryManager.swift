@@ -9,10 +9,12 @@ class PriceHistoryManager {
     private let settingsURL: URL
     private let alertsURL: URL
     private let percentageAlertsURL: URL
+    private let profitAlertsURL: URL
     private(set) var position: PositionInfo?
     private(set) var settings: AppSettings = AppSettings()
     private(set) var alerts: [PriceAlert] = []
     private(set) var percentageAlerts: [PercentageAlert] = []
+    private(set) var profitAlerts: [ProfitAlert] = []
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -23,11 +25,13 @@ class PriceHistoryManager {
         settingsURL = dir.appendingPathComponent("settings.json")
         alertsURL = dir.appendingPathComponent("alerts.json")
         percentageAlertsURL = dir.appendingPathComponent("percentageAlerts.json")
+        profitAlertsURL = dir.appendingPathComponent("profitAlerts.json")
         loadHistory()
         loadPosition()
         loadSettings()
         loadAlerts()
         loadPercentageAlerts()
+        loadProfitAlerts()
         migrateFromUserDefaultsIfNeeded()
         cleanupAllSources()
     }
@@ -172,6 +176,41 @@ class PriceHistoryManager {
         guard let data = try? Data(contentsOf: percentageAlertsURL) else { return }
         if let loaded = try? JSONDecoder().decode([PercentageAlert].self, from: data) {
             percentageAlerts = loaded
+        }
+    }
+
+    // MARK: - Profit Alerts
+
+    func saveProfitAlerts(_ list: [ProfitAlert]) {
+        profitAlerts = list
+        if let data = try? JSONEncoder().encode(list) {
+            try? data.write(to: profitAlertsURL, options: .atomic)
+        }
+    }
+
+    func addProfitAlert(_ alert: ProfitAlert) {
+        profitAlerts.append(alert)
+        saveProfitAlerts(profitAlerts)
+    }
+
+    func removeProfitAlert(id: String) {
+        profitAlerts.removeAll { $0.id == id }
+        saveProfitAlerts(profitAlerts)
+    }
+
+    func resetProfitAlert(id: String) {
+        if let idx = profitAlerts.firstIndex(where: { $0.id == id }) {
+            profitAlerts[idx].triggered = false
+            profitAlerts[idx].lastTriggeredAt = nil
+            profitAlerts[idx].wasConditionMet = false
+            saveProfitAlerts(profitAlerts)
+        }
+    }
+
+    private func loadProfitAlerts() {
+        guard let data = try? Data(contentsOf: profitAlertsURL) else { return }
+        if let loaded = try? JSONDecoder().decode([ProfitAlert].self, from: data) {
+            profitAlerts = loaded
         }
     }
 
