@@ -4,6 +4,9 @@ import Combine
 import UserNotifications
 
 private final class StatusPopupPanel: NSPanel {
+    var onOrderOut: (() -> Void)?
+    var onClose: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
@@ -23,6 +26,22 @@ private final class StatusPopupPanel: NSPanel {
         hidesOnDeactivate = false
         contentView?.wantsLayer = true
         contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    override func orderOut(_ sender: Any?) {
+        let wasVisible = isVisible
+        super.orderOut(sender)
+        if wasVisible {
+            onOrderOut?()
+        }
+    }
+
+    override func close() {
+        let wasVisible = isVisible
+        super.close()
+        if wasVisible {
+            onClose?()
+        }
     }
 }
 
@@ -201,6 +220,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var mainPanelAnchorFrame: NSRect?
+    private let appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "--"
 
     override init() {
         statusBar = NSStatusBar.system
@@ -339,6 +359,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         panelModel.allSourcePrices = dataService.allSourcePrices
         panelModel.position = historyManager.position
         panelModel.lastUpdateTime = dataService.lastUpdateTime
+        panelModel.appVersion = appVersion
         panelModel.alertCount = historyManager.alerts.count
         panelModel.percentageAlertCount = historyManager.percentageAlerts.count
         panelModel.profitAlertCount = historyManager.profitAlerts.count
@@ -374,6 +395,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func createMainPanelWindow() -> StatusPopupPanel {
         let window = StatusPopupPanel()
         window.acceptsMouseMovedEvents = true
+        window.onOrderOut = { [weak self] in
+            self?.handleMainPanelDidHide()
+        }
+        window.onClose = { [weak self] in
+            self?.handleMainPanelDidHide()
+        }
         let hostingView = NSHostingView(rootView: makeMainPanelRootView())
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         mainPanelHostingView = hostingView
@@ -396,16 +423,16 @@ class StatusBarController: NSObject, NSMenuDelegate {
                 self?.showHoverDetail(.position)
             },
             onSettingsClick: { [weak self] in
-                self?.togglePinnedDetail(.settings)
+                self?.showHoverDetail(.settings)
             },
             onAlertsClick: { [weak self] in
-                self?.togglePinnedDetail(.alerts)
+                self?.showHoverDetail(.alerts)
             },
             onPercentageAlertsClick: { [weak self] in
-                self?.togglePinnedDetail(.percentageAlerts)
+                self?.showHoverDetail(.percentageAlerts)
             },
             onProfitAlertsClick: { [weak self] in
-                self?.togglePinnedDetail(.profitAlerts)
+                self?.showHoverDetail(.profitAlerts)
             },
             onQuit: { [weak self] in
                 self?.quitApp()
@@ -414,25 +441,32 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func showHoverDetail(_ kind: DetailPanelKind) {
-        guard pinnedDetailPanelKind == nil else { return }
         NSLog("[GoldPrice] showHoverDetail: \(String(describing: kind))")
         hoverDetailPanelKind = kind
         showChildPanel(for: kind)
     }
 
     private func clearHoverDetail() {
-        guard pinnedDetailPanelKind == nil else { return }
         hoverDetailPanelKind = nil
-        hideChildPanel()
+        if let pinnedDetailPanelKind {
+            showChildPanel(for: pinnedDetailPanelKind)
+        } else {
+            hideChildPanel()
+        }
     }
 
     private func togglePinnedDetail(_ kind: DetailPanelKind) {
         if pinnedDetailPanelKind == kind {
-            pinnedDetailPanelKind = nil
-            if let hoverDetailPanelKind {
-                showChildPanel(for: hoverDetailPanelKind)
+            if hoverDetailPanelKind != nil {
+                hoverDetailPanelKind = nil
+                showChildPanel(for: kind)
             } else {
-                hideChildPanel()
+                pinnedDetailPanelKind = nil
+                if let hoverDetailPanelKind {
+                    showChildPanel(for: hoverDetailPanelKind)
+                } else {
+                    hideChildPanel()
+                }
             }
             return
         }
@@ -443,7 +477,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private var activeDetailPanelKind: DetailPanelKind? {
-        pinnedDetailPanelKind ?? hoverDetailPanelKind
+        hoverDetailPanelKind ?? pinnedDetailPanelKind
     }
 
     private func showChildPanel(for kind: DetailPanelKind) {
@@ -468,6 +502,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
         window.acceptsMouseMovedEvents = true
         childPanelWindow = window
         return window
+    }
+
+    private func handleMainPanelDidHide() {
+        childPanelWindow?.orderOut(nil)
+        hoverDetailPanelKind = nil
+        pinnedDetailPanelKind = nil
+        mainPanelAnchorFrame = nil
+        removeEventMonitors()
     }
 
     private func hideChildPanel() {

@@ -36,6 +36,7 @@ final class StatusBarPanelModel: ObservableObject {
     @Published var allSourcePrices: [GoldPriceSource: PriceInfo] = [:]
     @Published var position: PositionInfo?
     @Published var lastUpdateTime: Date = Date()
+    @Published var appVersion: String = "--"
     @Published var alertCount: Int = 0
     @Published var percentageAlertCount: Int = 0
     @Published var profitAlertCount: Int = 0
@@ -110,12 +111,18 @@ struct StatusBarMainPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("更新于 \(timeText)")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("更新于 \(timeText)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Text("版本 v\(model.appVersion)")
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundColor(.secondary)
+            }
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
 
             Divider()
                 .padding(.horizontal, 14)
@@ -149,11 +156,11 @@ struct StatusBarMainPanelView: View {
                 .padding(.horizontal, 14)
                 .padding(.top, 6)
 
-            navigationRow(title: "偏好设置", action: onSettingsClick)
+            navigationRow(title: "偏好设置", onHover: onSettingsClick, action: onSettingsClick)
                 .padding(.top, 2)
-            navigationRow(title: model.alertCount > 0 ? "价格提醒 (\(model.alertCount))" : "价格提醒", action: onAlertsClick)
-            navigationRow(title: model.percentageAlertCount > 0 ? "涨跌幅提醒 (\(model.percentageAlertCount))" : "涨跌幅提醒", action: onPercentageAlertsClick)
-            navigationRow(title: model.profitAlertCount > 0 ? "收益提醒 (\(model.profitAlertCount))" : "收益提醒", action: onProfitAlertsClick)
+            navigationRow(title: model.alertCount > 0 ? "价格提醒 (\(model.alertCount))" : "价格提醒", onHover: onAlertsClick, action: onAlertsClick)
+            navigationRow(title: model.percentageAlertCount > 0 ? "涨跌幅提醒 (\(model.percentageAlertCount))" : "涨跌幅提醒", onHover: onPercentageAlertsClick, action: onPercentageAlertsClick)
+            navigationRow(title: model.profitAlertCount > 0 ? "收益提醒 (\(model.profitAlertCount))" : "收益提醒", onHover: onProfitAlertsClick, action: onProfitAlertsClick)
 
             Divider()
                 .padding(.horizontal, 14)
@@ -247,7 +254,7 @@ struct StatusBarMainPanelView: View {
         }
     }
 
-    private func navigationRow(title: String, action: @escaping () -> Void) -> some View {
+    private func navigationRow(title: String, onHover: @escaping () -> Void, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
                 Text(title)
@@ -264,5 +271,8 @@ struct StatusBarMainPanelView: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
+        .onHover { inside in
+            if inside { onHover() }
+        }
     }
 }
