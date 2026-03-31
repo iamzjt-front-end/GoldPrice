@@ -290,11 +290,18 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         let source = dataService.currentSource
         guard let info = dataService.allSourcePrices[source], info.price != "--" else {
-            button.title = "\(prefix)--"
+            button.attributedTitle = NSAttributedString(string: "\(prefix)--")
             return
         }
 
-        var title = "\(prefix)\(info.formattedPrice)"
+        let defaultAttributes: [NSAttributedString.Key: Any] = [
+            .font: button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.labelColor
+        ]
+        let attributedTitle = NSMutableAttributedString(
+            string: "\(prefix)\(info.formattedPrice)",
+            attributes: defaultAttributes
+        )
 
         let dailyChangeMode = historyManager.settings.dailyChangeDisplay
         if dailyChangeMode != .off {
@@ -322,11 +329,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
             }
 
             if let dailyChangeText {
-                title += "  \(dailyChangeText)"
+                attributedTitle.append(NSAttributedString(string: "  \(dailyChangeText)", attributes: defaultAttributes))
             }
         }
 
         let profitMode = historyManager.settings.profitDisplay
+        let profitUsesColor = historyManager.settings.statusBarProfitUsesColor
         if profitMode != .off,
            let pos = historyManager.position,
            let posSource = pos.source,
@@ -338,20 +346,47 @@ class StatusBarController: NSObject, NSMenuDelegate {
             let signR = r >= 0 ? "+" : ""
             switch profitMode {
             case .amount:
-                title += "  \(signP)\(String(format: "%.2f", p))"
+                let profitText = "\(signP)\(String(format: "%.2f", p))"
+                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
+                attributedTitle.append(NSAttributedString(
+                    string: profitText,
+                    attributes: profitUsesColor
+                        ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: p >= 0)
+                        : defaultAttributes
+                ))
             case .rate:
-                title += "  \(signR)\(String(format: "%.2f", r))%"
+                let profitText = "\(signR)\(String(format: "%.2f", r))%"
+                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
+                attributedTitle.append(NSAttributedString(
+                    string: profitText,
+                    attributes: profitUsesColor
+                        ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: r >= 0)
+                        : defaultAttributes
+                ))
             case .both:
-                title += "  \(signP)\(String(format: "%.2f", p)) (\(signR)\(String(format: "%.2f", r))%)"
+                let profitText = "\(signP)\(String(format: "%.2f", p)) (\(signR)\(String(format: "%.2f", r))%)"
+                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
+                attributedTitle.append(NSAttributedString(
+                    string: profitText,
+                    attributes: profitUsesColor
+                        ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: p >= 0)
+                        : defaultAttributes
+                ))
             case .off:
                 break
             }
         }
 
-        button.title = title
+        button.attributedTitle = attributedTitle
         checkPriceAlerts()
         checkPercentageAlerts()
         checkProfitAlerts()
+    }
+
+    private func statusBarHighlightAttributes(base: [NSAttributedString.Key: Any], isPositive: Bool) -> [NSAttributedString.Key: Any] {
+        var attributes = base
+        attributes[.foregroundColor] = isPositive ? NSColor.systemRed : NSColor.systemGreen
+        return attributes
     }
 
     private func syncPanelModel() {

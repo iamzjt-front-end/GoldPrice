@@ -711,6 +711,7 @@ private struct SettingsEditorContent: View {
     @State private var selectedTab: SettingsTab = .display
     @State private var selectedIcon: String
     @State private var profitDisplay: ProfitDisplayMode
+    @State private var statusBarProfitUsesColor: Bool
     @State private var dailyChangeDisplay: DailyChangeDisplayMode
     @State private var refreshIntervalSeconds: Int
     @State private var refreshIntervalText: String
@@ -734,6 +735,7 @@ private struct SettingsEditorContent: View {
         let s = PriceHistoryManager.shared.settings
         _selectedIcon = State(initialValue: s.statusBarIcon)
         _profitDisplay = State(initialValue: s.profitDisplay)
+        _statusBarProfitUsesColor = State(initialValue: s.statusBarProfitUsesColor)
         _dailyChangeDisplay = State(initialValue: s.dailyChangeDisplay)
         _refreshIntervalSeconds = State(initialValue: s.refreshInterval)
         _refreshIntervalText = State(initialValue: "\(s.refreshInterval)")
@@ -937,6 +939,28 @@ private struct SettingsEditorContent: View {
                         profitDisplay = $0
                     }
                 )
+
+                HStack(spacing: 10) {
+                    Text("状态栏收益颜色")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Toggle("", isOn: $statusBarProfitUsesColor)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.primary.opacity(0.03))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                )
+                .padding(.top, 2)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1026,6 +1050,7 @@ private struct SettingsEditorContent: View {
         let settings = AppSettings(
             statusBarIcon: selectedIcon,
             profitDisplay: profitDisplay,
+            statusBarProfitUsesColor: statusBarProfitUsesColor,
             dailyChangeDisplay: dailyChangeDisplay,
             refreshInterval: refreshIntervalSeconds,
             defaultAlertRepeatMode: defaultAlertRepeatMode,

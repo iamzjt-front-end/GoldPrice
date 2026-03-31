@@ -4,6 +4,7 @@ class PriceHistoryManager {
     static let shared = PriceHistoryManager()
 
     private var history: [String: [PriceRecord]] = [:]
+    private let queue = DispatchQueue(label: "com.goldprice.history", qos: .userInitiated)
     private let fileURL: URL
     private let positionURL: URL
     private let settingsURL: URL
@@ -39,36 +40,47 @@ class PriceHistoryManager {
     // MARK: - Public API
 
     func recordPrice(_ price: Double, for sourceKey: String) {
-        if history[sourceKey] == nil {
-            history[sourceKey] = []
+        queue.sync {
+            if history[sourceKey] == nil {
+                history[sourceKey] = []
+            }
+            history[sourceKey]?.append(PriceRecord(timestamp: Date(), price: price))
+            cleanupOldData(for: sourceKey)
+            saveHistory()
         }
-        history[sourceKey]?.append(PriceRecord(timestamp: Date(), price: price))
-        cleanupOldData(for: sourceKey)
-        saveHistory()
     }
 
     func recordPrices(_ records: [PriceRecord], for sourceKey: String) {
-        if history[sourceKey] == nil {
-            history[sourceKey] = []
+        queue.sync {
+            if history[sourceKey] == nil {
+                history[sourceKey] = []
+            }
+            let existing = Set(history[sourceKey]!.map { Int($0.timestamp.timeIntervalSince1970) })
+            let newRecords = records.filter { !existing.contains(Int($0.timestamp.timeIntervalSince1970)) }
+            history[sourceKey]?.append(contentsOf: newRecords)
+            cleanupOldData(for: sourceKey)
+            saveHistory()
         }
-        let existing = Set(history[sourceKey]!.map { Int($0.timestamp.timeIntervalSince1970) })
-        let newRecords = records.filter { !existing.contains(Int($0.timestamp.timeIntervalSince1970)) }
-        history[sourceKey]?.append(contentsOf: newRecords)
-        cleanupOldData(for: sourceKey)
-        saveHistory()
     }
 
     func getTodayRecords(for sourceKey: String) -> [PriceRecord] {
-        let startOfDay = Calendar.current.startOfDay(for: Date())
-        return (history[sourceKey] ?? [])
-            .filter { $0.timestamp >= startOfDay }
-            .sorted { $0.timestamp < $1.timestamp }
+        queue.sync {
+            let startOfDay = Calendar.current.startOfDay(for: Date())
+            return (history[sourceKey] ?? [])
+                .filter { $0.timestamp >= startOfDay }
+                .sorted { $0.timestamp < $1.timestamp }
+        }
     }
 
     func getHighLow(for sourceKey: String) -> (high: Double?, low: Double?) {
-        let records = getTodayRecords(for: sourceKey)
-        let prices = records.map { $0.price }
-        return (prices.max(), prices.min())
+        queue.sync {
+            let startOfDay = Calendar.current.startOfDay(for: Date())
+            let records = (history[sourceKey] ?? [])
+                .filter { $0.timestamp >= startOfDay }
+                .sorted { $0.timestamp < $1.timestamp }
+            let prices = records.map { $0.price }
+            return (prices.max(), prices.min())
+        }
     }
 
     // MARK: - Position
@@ -78,6 +90,11 @@ class PriceHistoryManager {
         if let data = try? JSONEncoder().encode(pos) {
             try? data.write(to: positionURL, options: .atomic)
         }
+    }
+
+    func clearPosition() {
+        position = nil
+        try? FileManager.default.removeItem(at: positionURL)
     }
 
     private func loadPosition() {
