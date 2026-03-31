@@ -37,18 +37,30 @@ osascript <<APPLESCRIPT
 tell application "Finder"
     tell disk "$DMG_VOLUME"
         open
-        delay 2
+        delay 3
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
         set bounds of container window to {100, 100, 820, 580}
-        delay 1
+        delay 2
+
         set theViewOptions to icon view options of container window
         set arrangement of theViewOptions to not arranged
         set icon size of theViewOptions to 80
         set background picture of theViewOptions to file ".background:bg.png"
-        set position of item "${APP_NAME}.app" of container window to {180, 260}
-        set position of item "Applications" of container window to {540, 260}
+        delay 1
+
+        -- Retry setting icon positions (Finder may not be ready)
+        repeat 3 times
+            try
+                set position of item "${APP_NAME}.app" of container window to {180, 260}
+                set position of item "Applications" of container window to {540, 260}
+                exit repeat
+            on error
+                delay 2
+            end try
+        end repeat
+
         close
         open
         update without registering applications
