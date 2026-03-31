@@ -591,7 +591,10 @@ private struct PositionEditorContent: View {
     @State private var gramsText: String
     @State private var avgPriceText: String
     @State private var selectedSource: GoldPriceSource
-    @State private var saved = false
+    @State private var feedbackText: String?
+    @State private var feedbackIsError = false
+    @State private var showClearConfirm = false
+    @State private var hasSavedPosition: Bool
 
     let allSources: [GoldPriceSource]
 
@@ -600,6 +603,7 @@ private struct PositionEditorContent: View {
         _gramsText = State(initialValue: position.map { String(format: "%.2f", $0.grams) } ?? "")
         _avgPriceText = State(initialValue: position.map { String(format: "%.2f", $0.avgPrice) } ?? "")
         _selectedSource = State(initialValue: position?.source ?? allSources.first ?? .jdZsFinance)
+        _hasSavedPosition = State(initialValue: position != nil)
     }
 
     var body: some View {
@@ -611,25 +615,16 @@ private struct PositionEditorContent: View {
 
                 Spacer()
 
-                if saved {
-                    Text("已保存")
+                if let feedbackText {
+                    Text(feedbackText)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.goldGreen)
+                        .foregroundColor(feedbackIsError ? .red : .goldGreen)
                 }
             }
 
             HStack(alignment: .top, spacing: 10) {
-                positionField(
-                    title: "买入均价 (元/克)",
-                    placeholder: "例如: 980.50",
-                    text: $avgPriceText
-                )
-
-                positionField(
-                    title: "持仓克数",
-                    placeholder: "例如: 10.00",
-                    text: $gramsText
-                )
+                positionField(title: "买入均价 (元/克)", placeholder: "例如: 980.50", text: $avgPriceText)
+                positionField(title: "持仓克数", placeholder: "例如: 10.00", text: $gramsText)
             }
 
             VStack(alignment: .leading, spacing: 7) {
@@ -644,31 +639,70 @@ private struct PositionEditorContent: View {
                 )
             }
 
-            Divider()
-                .opacity(0.65)
+            Divider().opacity(0.65)
 
-            HStack {
-                Spacer()
-                Button("保存") {
-                    guard let grams = Double(gramsText), let avgPrice = Double(avgPriceText),
-                          grams > 0, avgPrice > 0 else { return }
-                    let pos = PositionInfo(
-                        grams: grams,
-                        avgPrice: avgPrice,
-                        sourceRawValue: selectedSource.rawValue
-                    )
-                    PriceHistoryManager.shared.savePosition(pos)
-                    saved = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        saved = false
+            HStack(spacing: 8) {
+                if hasSavedPosition {
+                    if showClearConfirm {
+                        Button("确认清仓") { performClear() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .foregroundColor(.red)
+                        Button("取消") {
+                            withAnimation { showClearConfirm = false }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Button("清仓") {
+                            withAnimation { showClearConfirm = true }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .foregroundColor(.red)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+
+                Spacer()
+
+                Button("保存") { performSave() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
         }
         .padding(14)
         .frame(width: 320, alignment: .leading)
+    }
+
+    // MARK: - Actions
+
+    private func performSave() {
+        guard let grams = Double(gramsText), let avgPrice = Double(avgPriceText),
+              grams > 0, avgPrice > 0 else {
+            showFeedback("请输入有效的克数和均价", isError: true)
+            return
+        }
+        let pos = PositionInfo(grams: grams, avgPrice: avgPrice, sourceRawValue: selectedSource.rawValue)
+        PriceHistoryManager.shared.savePosition(pos)
+        hasSavedPosition = true
+        showFeedback("已保存", isError: false)
+    }
+
+    private func performClear() {
+        PriceHistoryManager.shared.clearPosition()
+        gramsText = ""
+        avgPriceText = ""
+        showClearConfirm = false
+        hasSavedPosition = false
+        showFeedback("已清仓", isError: false)
+    }
+
+    private func showFeedback(_ text: String, isError: Bool) {
+        feedbackText = text
+        feedbackIsError = isError
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            feedbackText = nil
+        }
     }
 
     private func positionField(title: String, placeholder: String, text: Binding<String>) -> some View {
