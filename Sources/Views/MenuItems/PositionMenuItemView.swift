@@ -737,12 +737,6 @@ class SettingsEditorView: EditableMenuItemView {
 }
 
 private struct SettingsEditorContent: View {
-    private enum SettingsTab: String, CaseIterable {
-        case display = "显示"
-        case alerts = "提醒"
-    }
-
-    @State private var selectedTab: SettingsTab = .display
     @State private var selectedIcon: String
     @State private var profitDisplay: ProfitDisplayMode
     @State private var statusBarProfitUsesColor: Bool
@@ -750,7 +744,6 @@ private struct SettingsEditorContent: View {
     @State private var refreshIntervalSeconds: Int
     @State private var refreshIntervalText: String
     @State private var selectedSource: GoldPriceSource
-    @State private var defaultAlertRepeatMode: AlertRepeatMode
     @State private var defaultAlertRepeatInterval: AlertRepeatInterval
     @State private var saved = false
 
@@ -774,7 +767,6 @@ private struct SettingsEditorContent: View {
         _refreshIntervalSeconds = State(initialValue: s.refreshInterval)
         _refreshIntervalText = State(initialValue: "\(s.refreshInterval)")
         _selectedSource = State(initialValue: currentSource)
-        _defaultAlertRepeatMode = State(initialValue: s.defaultAlertRepeatMode)
         _defaultAlertRepeatInterval = State(initialValue: s.defaultAlertRepeatInterval)
     }
 
@@ -784,16 +776,7 @@ private struct SettingsEditorContent: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.primary)
 
-            settingsTabs
-
-            Group {
-                switch selectedTab {
-                case .display:
-                    displaySettingsSection
-                case .alerts:
-                    alertSettingsSection
-                }
-            }
+            settingsContent
 
             Spacer(minLength: 0)
 
@@ -819,40 +802,7 @@ private struct SettingsEditorContent: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private var settingsTabs: some View {
-        HStack(spacing: 18) {
-            ForEach(SettingsTab.allCases, id: \.self) { tab in
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        selectedTab = tab
-                    }
-                }) {
-                    VStack(spacing: 6) {
-                        Text(tab.rawValue)
-                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .medium))
-                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
-
-                        Rectangle()
-                            .fill(selectedTab == tab ? Color.accentColor : Color.clear)
-                            .frame(height: 2)
-                            .clipShape(Capsule())
-                    }
-                    .frame(width: 34)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer()
-        }
-        .padding(.bottom, 2)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(height: 0.5)
-        }
-    }
-
-    private var displaySettingsSection: some View {
+    private var settingsContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("状态栏显示数据源")
@@ -1015,66 +965,24 @@ private struct SettingsEditorContent: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
-        }
-    }
 
-    private var alertSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(AlertRepeatMode.allCases, id: \.self) { mode in
-                    Button(action: {
-                        defaultAlertRepeatMode = mode
-                    }) {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: defaultAlertRepeatMode == mode ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 13))
-                                .foregroundColor(defaultAlertRepeatMode == mode ? .accentColor : .secondary)
-                                .padding(.top, 1)
+                Text("默认提醒间隔")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
 
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(mode.rawValue)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.primary)
-
-                                Text(mode.detailDescription)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(defaultAlertRepeatMode == mode ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7)
-                                .stroke(
-                                    defaultAlertRepeatMode == mode ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.06),
-                                    lineWidth: defaultAlertRepeatMode == mode ? 1 : 0.5
-                                )
-                        )
+                segmentedPicker(
+                    items: AlertRepeatInterval.allCases,
+                    selected: defaultAlertRepeatInterval,
+                    label: { $0.shortLabel },
+                    onSelect: {
+                        defaultAlertRepeatInterval = $0
                     }
-                    .buttonStyle(.plain)
-                }
-            }
+                )
 
-            if defaultAlertRepeatMode == .recurring {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("默认提醒间隔")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-
-                    segmentedPicker(
-                        items: AlertRepeatInterval.allCases,
-                        selected: defaultAlertRepeatInterval,
-                        label: { $0.shortLabel },
-                        onSelect: {
-                            defaultAlertRepeatInterval = $0
-                        }
-                    )
-                }
+                Text("价格持续满足条件时，按此间隔重复提醒。")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
             }
         }
     }
@@ -1087,7 +995,6 @@ private struct SettingsEditorContent: View {
             statusBarProfitUsesColor: statusBarProfitUsesColor,
             dailyChangeDisplay: dailyChangeDisplay,
             refreshInterval: refreshIntervalSeconds,
-            defaultAlertRepeatMode: defaultAlertRepeatMode,
             defaultAlertRepeatInterval: defaultAlertRepeatInterval
         )
         PriceHistoryManager.shared.saveSettings(settings)
@@ -1105,7 +1012,7 @@ private struct SettingsEditorContent: View {
 
         let syncedPriceAlerts = historyManager.alerts.map { alert in
             var updated = alert
-            updated.repeatMode = settings.defaultAlertRepeatMode
+            updated.repeatMode = .recurring
             updated.repeatInterval = settings.defaultAlertRepeatInterval
             return updated
         }
@@ -1113,7 +1020,7 @@ private struct SettingsEditorContent: View {
 
         let syncedPercentageAlerts = historyManager.percentageAlerts.map { alert in
             var updated = alert
-            updated.repeatMode = settings.defaultAlertRepeatMode
+            updated.repeatMode = .recurring
             updated.repeatInterval = settings.defaultAlertRepeatInterval
             return updated
         }
@@ -1121,7 +1028,7 @@ private struct SettingsEditorContent: View {
 
         let syncedProfitAlerts = historyManager.profitAlerts.map { alert in
             var updated = alert
-            updated.repeatMode = settings.defaultAlertRepeatMode
+            updated.repeatMode = .recurring
             updated.repeatInterval = settings.defaultAlertRepeatInterval
             return updated
         }
@@ -1245,7 +1152,7 @@ private struct AlertEditorContent: View {
                         sourceRawValue: selectedSource.rawValue,
                         condition: selectedCondition,
                         targetPrice: price,
-                        repeatMode: settings.defaultAlertRepeatMode,
+                        repeatMode: .recurring,
                         repeatInterval: settings.defaultAlertRepeatInterval
                     )
                     PriceHistoryManager.shared.addAlert(alert)
@@ -1261,24 +1168,8 @@ private struct AlertEditorContent: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var defaultRepeatSummary: String {
-        let settings = PriceHistoryManager.shared.settings
-        switch settings.defaultAlertRepeatMode {
-        case .rearmOnCross:
-            return "新提醒默认使用：重新穿越。可在“偏好设置”中修改。"
-        case .recurring:
-            return "新提醒默认使用：持续提醒，间隔\(settings.defaultAlertRepeatInterval.shortLabel)。可在“偏好设置”中修改。"
-        }
-    }
-
     private var compactRepeatSummary: String {
-        let settings = PriceHistoryManager.shared.settings
-        switch settings.defaultAlertRepeatMode {
-        case .rearmOnCross:
-            return "重新穿越"
-        case .recurring:
-            return "持续提醒 · \(settings.defaultAlertRepeatInterval.shortLabel)"
-        }
+        "提醒间隔 · \(PriceHistoryManager.shared.settings.defaultAlertRepeatInterval.shortLabel)"
     }
 
     private func alertSection(title: String, alerts: [PriceAlert]) -> some View {
@@ -1399,13 +1290,7 @@ private struct PercentageAlertEditorContent: View {
     }
 
     private var compactRepeatSummary: String {
-        let settings = PriceHistoryManager.shared.settings
-        switch settings.defaultAlertRepeatMode {
-        case .rearmOnCross:
-            return "重新穿越"
-        case .recurring:
-            return "持续提醒 · \(settings.defaultAlertRepeatInterval.shortLabel)"
-        }
+        "提醒间隔 · \(PriceHistoryManager.shared.settings.defaultAlertRepeatInterval.shortLabel)"
     }
 
     private var netChangeAlerts: [PercentageAlert] {
@@ -1591,7 +1476,7 @@ private struct PercentageAlertEditorContent: View {
                 sourceRawValue: source.rawValue,
                 metric: metric,
                 targetPercent: normalizedTarget,
-                repeatMode: settings.defaultAlertRepeatMode,
+                repeatMode: .recurring,
                 repeatInterval: settings.defaultAlertRepeatInterval
             )
         )
@@ -1672,13 +1557,7 @@ private struct ProfitAlertEditorContent: View {
     }
 
     private var compactRepeatSummary: String {
-        let settings = PriceHistoryManager.shared.settings
-        switch settings.defaultAlertRepeatMode {
-        case .rearmOnCross:
-            return "重新穿越"
-        case .recurring:
-            return "持续提醒 · \(settings.defaultAlertRepeatInterval.shortLabel)"
-        }
+        "提醒间隔 · \(PriceHistoryManager.shared.settings.defaultAlertRepeatInterval.shortLabel)"
     }
 
     private var filteredAlerts: [ProfitAlert] {
@@ -1884,12 +1763,129 @@ private struct ProfitAlertEditorContent: View {
                 kind: selectedTab.kind,
                 metric: selectedMetric,
                 targetValue: abs(target),
-                repeatMode: settings.defaultAlertRepeatMode,
+                repeatMode: .recurring,
                 repeatInterval: settings.defaultAlertRepeatInterval
             )
         )
         PriceHistoryManager.shared.saveProfitAlerts(alerts)
         targetText = ""
+    }
+}
+
+// MARK: - Extreme Price Alert editor submenu (新高新低提醒)
+
+class ExtremePriceAlertEditorView: EditableMenuItemView {
+    init() {
+        super.init(contentView: NSHostingView(rootView: ExtremePriceAlertEditorContent()), minWidth: 300)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+private struct ExtremePriceAlertEditorContent: View {
+    @State private var configs: [GoldPriceSource: ExtremePriceAlertConfig] = {
+        var map: [GoldPriceSource: ExtremePriceAlertConfig] = [:]
+        for config in PriceHistoryManager.shared.extremePriceAlertConfigs {
+            if let source = config.source {
+                map[source] = config
+            }
+        }
+        return map
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("新高新低提醒")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text("提醒间隔 · \(PriceHistoryManager.shared.settings.defaultAlertRepeatInterval.shortLabel)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            Text("开启后，当日价格创新高或新低时自动通知。")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 4) {
+                ForEach(GoldPriceSource.allCases, id: \.self) { source in
+                    sourceRow(source)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 300)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func sourceRow(_ source: GoldPriceSource) -> some View {
+        let config = configs[source] ?? ExtremePriceAlertConfig(sourceRawValue: source.rawValue, notifyOnNewHigh: false, notifyOnNewLow: false)
+        let highOn = config.notifyOnNewHigh
+        let lowOn = config.notifyOnNewLow
+
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.rawValue)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+
+                Text(source.unit)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            toggleButton(label: "新高", isOn: highOn) {
+                var updated = config
+                updated.notifyOnNewHigh.toggle()
+                save(updated, for: source)
+            }
+
+            toggleButton(label: "新低", isOn: lowOn) {
+                var updated = config
+                updated.notifyOnNewLow.toggle()
+                save(updated, for: source)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(config.isEnabled ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(
+                    config.isEnabled ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.06),
+                    lineWidth: config.isEnabled ? 1 : 0.5
+                )
+        )
+    }
+
+    private func toggleButton(label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 11))
+                    .foregroundColor(isOn ? .accentColor : .secondary)
+
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isOn ? .primary : .secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(isOn ? Color.accentColor.opacity(0.12) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func save(_ config: ExtremePriceAlertConfig, for source: GoldPriceSource) {
+        configs[source] = config
+        PriceHistoryManager.shared.setExtremePriceAlertConfig(config)
     }
 }
 

@@ -40,6 +40,7 @@ final class StatusBarPanelModel: ObservableObject {
     @Published var alertCount: Int = 0
     @Published var percentageAlertCount: Int = 0
     @Published var profitAlertCount: Int = 0
+    @Published var extremePriceAlertEnabledCount: Int = 0
 }
 
 struct HoverPopupContainer<Main: View, Child: View>: View {
@@ -107,6 +108,7 @@ struct StatusBarMainPanelView: View {
     let onAlertsClick: () -> Void
     let onPercentageAlertsClick: () -> Void
     let onProfitAlertsClick: () -> Void
+    let onExtremePriceAlertsClick: () -> Void
     let onQuit: () -> Void
 
     var body: some View {
@@ -161,6 +163,7 @@ struct StatusBarMainPanelView: View {
             navigationRow(title: model.alertCount > 0 ? "价格提醒 (\(model.alertCount))" : "价格提醒", onHover: onAlertsClick, action: onAlertsClick)
             navigationRow(title: model.percentageAlertCount > 0 ? "涨跌幅提醒 (\(model.percentageAlertCount))" : "涨跌幅提醒", onHover: onPercentageAlertsClick, action: onPercentageAlertsClick)
             navigationRow(title: model.profitAlertCount > 0 ? "收益提醒 (\(model.profitAlertCount))" : "收益提醒", onHover: onProfitAlertsClick, action: onProfitAlertsClick)
+            navigationRow(title: model.extremePriceAlertEnabledCount > 0 ? "新高新低提醒 (\(model.extremePriceAlertEnabledCount))" : "新高新低提醒", onHover: onExtremePriceAlertsClick, action: onExtremePriceAlertsClick)
 
             Divider()
                 .padding(.horizontal, 14)

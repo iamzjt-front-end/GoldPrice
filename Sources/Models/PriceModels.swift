@@ -92,7 +92,6 @@ struct AppSettings: Codable, Equatable {
         case statusBarProfitUsesColor
         case dailyChangeDisplay
         case refreshInterval
-        case defaultAlertRepeatMode
         case defaultAlertRepeatInterval
     }
 
@@ -101,7 +100,6 @@ struct AppSettings: Codable, Equatable {
     var statusBarProfitUsesColor: Bool = true
     var dailyChangeDisplay: DailyChangeDisplayMode = .off
     var refreshInterval: Int = 5
-    var defaultAlertRepeatMode: AlertRepeatMode = .recurring
     var defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
 
     init(
@@ -110,7 +108,6 @@ struct AppSettings: Codable, Equatable {
         statusBarProfitUsesColor: Bool = true,
         dailyChangeDisplay: DailyChangeDisplayMode = .off,
         refreshInterval: Int = 5,
-        defaultAlertRepeatMode: AlertRepeatMode = .recurring,
         defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
     ) {
         self.statusBarIcon = statusBarIcon
@@ -118,7 +115,6 @@ struct AppSettings: Codable, Equatable {
         self.statusBarProfitUsesColor = statusBarProfitUsesColor
         self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
-        self.defaultAlertRepeatMode = defaultAlertRepeatMode
         self.defaultAlertRepeatInterval = defaultAlertRepeatInterval
     }
 
@@ -133,7 +129,6 @@ struct AppSettings: Codable, Equatable {
         statusBarProfitUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarProfitUsesColor) ?? true
         dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
-        defaultAlertRepeatMode = try container.decodeIfPresent(AlertRepeatMode.self, forKey: .defaultAlertRepeatMode) ?? .recurring
         defaultAlertRepeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .defaultAlertRepeatInterval) ?? .fiveMinutes
     }
 
@@ -144,7 +139,6 @@ struct AppSettings: Codable, Equatable {
         try container.encode(statusBarProfitUsesColor, forKey: .statusBarProfitUsesColor)
         try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
-        try container.encode(defaultAlertRepeatMode, forKey: .defaultAlertRepeatMode)
         try container.encode(defaultAlertRepeatInterval, forKey: .defaultAlertRepeatInterval)
     }
 }
@@ -514,6 +508,22 @@ struct ProfitAlert: Codable, Equatable {
 
     static func formattedPercent(_ value: Double) -> String {
         "\(String(format: "%.2f", value))%"
+    }
+}
+
+// MARK: - Extreme Price Alert (新高新低提醒)
+
+struct ExtremePriceAlertConfig: Codable, Equatable {
+    var sourceRawValue: String
+    var notifyOnNewHigh: Bool = true
+    var notifyOnNewLow: Bool = true
+
+    var source: GoldPriceSource? {
+        GoldPriceSource(rawValue: sourceRawValue)
+    }
+
+    var isEnabled: Bool {
+        notifyOnNewHigh || notifyOnNewLow
     }
 }
 

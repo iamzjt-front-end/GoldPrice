@@ -11,11 +11,13 @@ class PriceHistoryManager {
     private let alertsURL: URL
     private let percentageAlertsURL: URL
     private let profitAlertsURL: URL
+    private let extremePriceAlertConfigsURL: URL
     private(set) var position: PositionInfo?
     private(set) var settings: AppSettings = AppSettings()
     private(set) var alerts: [PriceAlert] = []
     private(set) var percentageAlerts: [PercentageAlert] = []
     private(set) var profitAlerts: [ProfitAlert] = []
+    private(set) var extremePriceAlertConfigs: [ExtremePriceAlertConfig] = []
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -27,12 +29,14 @@ class PriceHistoryManager {
         alertsURL = dir.appendingPathComponent("alerts.json")
         percentageAlertsURL = dir.appendingPathComponent("percentageAlerts.json")
         profitAlertsURL = dir.appendingPathComponent("profitAlerts.json")
+        extremePriceAlertConfigsURL = dir.appendingPathComponent("extremePriceAlertConfigs.json")
         loadHistory()
         loadPosition()
         loadSettings()
         loadAlerts()
         loadPercentageAlerts()
         loadProfitAlerts()
+        loadExtremePriceAlertConfigs()
         migrateFromUserDefaultsIfNeeded()
         cleanupAllSources()
     }
@@ -228,6 +232,35 @@ class PriceHistoryManager {
         guard let data = try? Data(contentsOf: profitAlertsURL) else { return }
         if let loaded = try? JSONDecoder().decode([ProfitAlert].self, from: data) {
             profitAlerts = loaded
+        }
+    }
+
+    // MARK: - Extreme Price Alert Configs
+
+    func saveExtremePriceAlertConfigs(_ list: [ExtremePriceAlertConfig]) {
+        extremePriceAlertConfigs = list
+        if let data = try? JSONEncoder().encode(list) {
+            try? data.write(to: extremePriceAlertConfigsURL, options: .atomic)
+        }
+    }
+
+    func extremePriceAlertConfig(for source: GoldPriceSource) -> ExtremePriceAlertConfig? {
+        extremePriceAlertConfigs.first { $0.sourceRawValue == source.rawValue }
+    }
+
+    func setExtremePriceAlertConfig(_ config: ExtremePriceAlertConfig) {
+        if let idx = extremePriceAlertConfigs.firstIndex(where: { $0.sourceRawValue == config.sourceRawValue }) {
+            extremePriceAlertConfigs[idx] = config
+        } else {
+            extremePriceAlertConfigs.append(config)
+        }
+        saveExtremePriceAlertConfigs(extremePriceAlertConfigs)
+    }
+
+    private func loadExtremePriceAlertConfigs() {
+        guard let data = try? Data(contentsOf: extremePriceAlertConfigsURL) else { return }
+        if let loaded = try? JSONDecoder().decode([ExtremePriceAlertConfig].self, from: data) {
+            extremePriceAlertConfigs = loaded
         }
     }
 

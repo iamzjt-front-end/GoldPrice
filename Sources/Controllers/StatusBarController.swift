@@ -183,6 +183,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case alerts
         case percentageAlerts
         case profitAlerts
+        case extremePriceAlerts
     }
 
     private enum DeferredSubmenuKind: String {
@@ -192,6 +193,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case alerts
         case percentageAlerts
         case profitAlerts
+        case extremePriceAlerts
     }
 
     private var statusBar: NSStatusBar
@@ -208,9 +210,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var alertMenuItem: NSMenuItem?
     private var percentageAlertMenuItem: NSMenuItem?
     private var profitAlertMenuItem: NSMenuItem?
+    private var extremePriceAlertMenuItem: NSMenuItem?
     private var updateTimeMenuItem: NSMenuItem?
     private var submenuSources: [ObjectIdentifier: GoldPriceSource] = [:]
     private var domesticChartErrors: [GoldPriceSource: String] = [:]
+    private var trackedDayHighLow: [String: (high: Double, low: Double, lastHighNotify: Date?, lastLowNotify: Date?)] = [:]
+    private var trackedDate: Date?
     private let panelModel = StatusBarPanelModel()
     private var mainPanelWindow: StatusPopupPanel?
     private var childPanelWindow: StatusPopupPanel?
@@ -381,6 +386,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         checkPriceAlerts()
         checkPercentageAlerts()
         checkProfitAlerts()
+        checkExtremePriceAlerts()
     }
 
     private func statusBarHighlightAttributes(base: [NSAttributedString.Key: Any], isPositive: Bool) -> [NSAttributedString.Key: Any] {
@@ -398,6 +404,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         panelModel.alertCount = historyManager.alerts.count
         panelModel.percentageAlertCount = historyManager.percentageAlerts.count
         panelModel.profitAlertCount = historyManager.profitAlerts.count
+        panelModel.extremePriceAlertEnabledCount = historyManager.extremePriceAlertConfigs.filter { $0.isEnabled }.count
     }
 
     @objc
@@ -468,6 +475,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
             },
             onProfitAlertsClick: { [weak self] in
                 self?.showHoverDetail(.profitAlerts)
+            },
+            onExtremePriceAlertsClick: { [weak self] in
+                self?.showHoverDetail(.extremePriceAlerts)
             },
             onQuit: { [weak self] in
                 self?.quitApp()
@@ -575,7 +585,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
             refreshPriceChildPanel(source: source)
         case .position:
             refreshPositionChildPanel()
-        case .settings, .alerts, .percentageAlerts, .profitAlerts:
+        case .settings, .alerts, .percentageAlerts, .profitAlerts, .extremePriceAlerts:
             break
         }
     }
@@ -736,6 +746,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
             return (view, preferredSize(for: view))
         case .profitAlerts:
             let view = ProfitAlertEditorView()
+            return (view, preferredSize(for: view))
+        case .extremePriceAlerts:
+            let view = ExtremePriceAlertEditorView()
             return (view, preferredSize(for: view))
         }
     }
@@ -899,6 +912,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         alertMenuItem = nil
         percentageAlertMenuItem = nil
         profitAlertMenuItem = nil
+        extremePriceAlertMenuItem = nil
         updateTimeMenuItem = nil
         submenuSources.removeAll()
 
@@ -946,6 +960,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         // Profit Alerts (收益提醒)
         menu.addItem(makeProfitAlertMenuItem())
+
+        // Extreme Price Alerts (新高新低提醒)
+        menu.addItem(makeExtremePriceAlertMenuItem())
 
         menu.addItem(NSMenuItem.separator())
 
@@ -1034,6 +1051,16 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return item
     }
 
+    private func makeExtremePriceAlertMenuItem() -> NSMenuItem {
+        let enabledCount = historyManager.extremePriceAlertConfigs.filter { $0.isEnabled }.count
+        let title = enabledCount > 0 ? "新高新低提醒 (\(enabledCount))" : "新高新低提醒"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.view = MenuNavigationRowView(title: title)
+        item.submenu = makeDeferredSubmenu(kind: .extremePriceAlerts)
+        extremePriceAlertMenuItem = item
+        return item
+    }
+
     private func makeDeferredSubmenu(kind: DeferredSubmenuKind, source: GoldPriceSource? = nil) -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
@@ -1053,6 +1080,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         refreshAlertMenuItemTitle()
         refreshPercentageAlertMenuItemTitle()
         refreshProfitAlertMenuItemTitle()
+        refreshExtremePriceAlertMenuItemTitle()
         refreshUpdateTimeItem()
         refreshOpenSubmenusIfNeeded()
     }
@@ -1125,6 +1153,21 @@ class StatusBarController: NSObject, NSMenuDelegate {
         guard let item = profitAlertMenuItem else { return }
         let alertCount = historyManager.profitAlerts.count
         let title = alertCount > 0 ? "收益提醒 (\(alertCount))" : "收益提醒"
+        item.title = title
+        if let view = item.view as? MenuNavigationRowView {
+            view.update(title: title)
+        } else {
+            item.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor
+            ])
+        }
+    }
+
+    private func refreshExtremePriceAlertMenuItemTitle() {
+        guard let item = extremePriceAlertMenuItem else { return }
+        let enabledCount = historyManager.extremePriceAlertConfigs.filter { $0.isEnabled }.count
+        let title = enabledCount > 0 ? "新高新低提醒 (\(enabledCount))" : "新高新低提醒"
         item.title = title
         if let view = item.view as? MenuNavigationRowView {
             view.update(title: title)
@@ -1359,6 +1402,14 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func populateProfitAlertsSubmenu(_ menu: NSMenu) {
         menu.removeAllItems()
         let alertView = ProfitAlertEditorView()
+        let alertItem = NSMenuItem()
+        alertItem.view = alertView
+        menu.addItem(alertItem)
+    }
+
+    private func populateExtremePriceAlertsSubmenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let alertView = ExtremePriceAlertEditorView()
         let alertItem = NSMenuItem()
         alertItem.view = alertView
         menu.addItem(alertItem)
@@ -1918,6 +1969,117 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    // MARK: - Extreme Price Alerts (新高新低)
+
+    private func checkExtremePriceAlerts() {
+        let today = Calendar.current.startOfDay(for: Date())
+        if trackedDate != today {
+            trackedDayHighLow.removeAll()
+            trackedDate = today
+        }
+
+        let configs = historyManager.extremePriceAlertConfigs
+        guard !configs.isEmpty else { return }
+
+        let now = Date()
+        let cooldown = TimeInterval(historyManager.settings.defaultAlertRepeatInterval.rawValue)
+
+        for config in configs {
+            guard config.isEnabled,
+                  let source = config.source,
+                  let info = dataService.allSourcePrices[source],
+                  let dayHigh = Double(info.dayHigh),
+                  let dayLow = Double(info.dayLow),
+                  dayHigh > 0, dayLow > 0 else { continue }
+
+            let key = config.sourceRawValue
+
+            guard var tracked = trackedDayHighLow[key] else {
+                trackedDayHighLow[key] = (high: dayHigh, low: dayLow, lastHighNotify: nil, lastLowNotify: nil)
+                continue
+            }
+
+            if config.notifyOnNewHigh && dayHigh > tracked.high {
+                let cooledDown = tracked.lastHighNotify.map { now.timeIntervalSince($0) >= cooldown } ?? true
+                if cooledDown {
+                    sendExtremePriceNotification(
+                        sourceRawValue: config.sourceRawValue,
+                        kind: .newHigh,
+                        price: dayHigh,
+                        unit: source.unit
+                    )
+                    tracked.lastHighNotify = now
+                }
+            }
+
+            if config.notifyOnNewLow && dayLow < tracked.low {
+                let cooledDown = tracked.lastLowNotify.map { now.timeIntervalSince($0) >= cooldown } ?? true
+                if cooledDown {
+                    sendExtremePriceNotification(
+                        sourceRawValue: config.sourceRawValue,
+                        kind: .newLow,
+                        price: dayLow,
+                        unit: source.unit
+                    )
+                    tracked.lastLowNotify = now
+                }
+            }
+
+            tracked.high = max(dayHigh, tracked.high)
+            tracked.low = min(dayLow, tracked.low)
+            trackedDayHighLow[key] = tracked
+        }
+    }
+
+    private enum ExtremePriceKind {
+        case newHigh, newLow
+
+        var label: String {
+            switch self {
+            case .newHigh: return "当天新高"
+            case .newLow: return "当天新低"
+            }
+        }
+
+        var idTag: String {
+            switch self {
+            case .newHigh: return "high"
+            case .newLow: return "low"
+            }
+        }
+    }
+
+    private func sendExtremePriceNotification(sourceRawValue: String, kind: ExtremePriceKind, price: Double, unit: String) {
+        guard Bundle.main.bundleIdentifier != nil else {
+            NSLog("[GoldPrice] Extreme price alert: \(sourceRawValue) \(kind.label) \(price)")
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "\(sourceRawValue) \(kind.label)"
+        content.body = "\(kind.label)价格：\(String(format: "%.2f", price)) \(unit)"
+        content.sound = .default
+
+        let dateKey = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyyMMdd"
+            return f.string(from: Date())
+        }()
+
+        let request = UNNotificationRequest(
+            identifier: "extreme-price-\(sourceRawValue)-\(kind.idTag)-\(dateKey)-\(String(format: "%.2f", price))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("[GoldPrice] 新高新低通知发送失败: \(error.localizedDescription)")
+            } else {
+                NSLog("[GoldPrice] 新高新低通知已发送: \(content.title)")
+            }
+        }
+    }
+
     // MARK: - Actions
 
     @objc func quitApp() {
@@ -1951,6 +2113,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             populatePercentageAlertsSubmenu(menu)
         case .profitAlerts:
             populateProfitAlertsSubmenu(menu)
+        case .extremePriceAlerts:
+            populateExtremePriceAlertsSubmenu(menu)
         }
     }
 
