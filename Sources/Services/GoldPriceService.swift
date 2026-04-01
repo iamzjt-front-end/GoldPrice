@@ -142,8 +142,10 @@ class GoldPriceService: ObservableObject {
                     info.changeRate = (datas["upAndDownRate"] as? String) ?? ""
                     info.changeAmount = (datas["upAndDownAmt"] as? String) ?? ""
 
-                    self.updateHighLow(&info, source: .jdZsFinance)
-                    completion(info)
+                    DispatchQueue.main.async {
+                        self.updateHighLow(&info, source: .jdZsFinance)
+                        completion(info)
+                    }
                 } else {
                     completion(nil)
                 }
@@ -179,8 +181,10 @@ class GoldPriceService: ObservableObject {
                     info.changeRate = (datas["upAndDownRate"] as? String) ?? ""
                     info.changeAmount = (datas["upAndDownAmt"] as? String) ?? ""
 
-                    self.updateHighLow(&info, source: .jdMsFinance)
-                    completion(info)
+                    DispatchQueue.main.async {
+                        self.updateHighLow(&info, source: .jdMsFinance)
+                        completion(info)
+                    }
                 } else {
                     completion(nil)
                 }
@@ -217,21 +221,24 @@ class GoldPriceService: ObservableObject {
             }
 
             let lines = text.components(separatedBy: ";").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            var results: [GoldPriceSource: PriceInfo] = [:]
 
-            for line in lines {
-                if line.contains("hf_XAU") {
-                    if let info = self.parseSinaLine(line, source: .londonGold) {
-                        results[.londonGold] = info
-                    }
-                } else if line.contains("hf_GC") {
-                    if let info = self.parseSinaLine(line, source: .newyorkGold) {
-                        results[.newyorkGold] = info
+            DispatchQueue.main.async {
+                var results: [GoldPriceSource: PriceInfo] = [:]
+
+                for line in lines {
+                    if line.contains("hf_XAU") {
+                        if let info = self.parseSinaLine(line, source: .londonGold) {
+                            results[.londonGold] = info
+                        }
+                    } else if line.contains("hf_GC") {
+                        if let info = self.parseSinaLine(line, source: .newyorkGold) {
+                            results[.newyorkGold] = info
+                        }
                     }
                 }
-            }
 
-            completion(results)
+                completion(results)
+            }
         }.resume()
     }
 

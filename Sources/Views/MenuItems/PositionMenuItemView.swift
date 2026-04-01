@@ -1792,19 +1792,13 @@ private struct ExtremePriceAlertEditorContent: View {
         return map
     }()
 
+    @State private var cooldown: ExtremeAlertCooldown = PriceHistoryManager.shared.settings.extremeAlertCooldown
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("新高新低提醒")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Text("提醒间隔 · \(PriceHistoryManager.shared.settings.defaultAlertRepeatInterval.shortLabel)")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
+            Text("新高新低提醒")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.primary)
 
             Text("开启后，当日价格创新高或新低时自动通知。")
                 .font(.system(size: 10))
@@ -1815,9 +1809,32 @@ private struct ExtremePriceAlertEditorContent: View {
                     sourceRow(source)
                 }
             }
+
+            Divider()
+
+            HStack {
+                Text("提醒间隔")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Picker("", selection: $cooldown) {
+                    ForEach(ExtremeAlertCooldown.allCases, id: \.self) { interval in
+                        Text(interval.shortLabel).tag(interval)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+                .onChange(of: cooldown) { newValue in
+                    var settings = PriceHistoryManager.shared.settings
+                    settings.extremeAlertCooldown = newValue
+                    PriceHistoryManager.shared.saveSettings(settings)
+                }
+            }
         }
         .padding(14)
-        .frame(width: 300)
+        .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)
     }
 

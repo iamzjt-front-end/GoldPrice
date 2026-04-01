@@ -85,6 +85,24 @@ enum DailyChangeDisplayMode: String, Codable, CaseIterable {
     case both = "都显示"
 }
 
+enum ExtremeAlertCooldown: Int, Codable, CaseIterable {
+    case oneMinute = 60
+    case threeMinutes = 180
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case thirtyMinutes = 1800
+
+    var shortLabel: String {
+        switch self {
+        case .oneMinute: return "1分"
+        case .threeMinutes: return "3分"
+        case .fiveMinutes: return "5分"
+        case .fifteenMinutes: return "15分"
+        case .thirtyMinutes: return "30分"
+        }
+    }
+}
+
 struct AppSettings: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case statusBarIcon
@@ -93,6 +111,7 @@ struct AppSettings: Codable, Equatable {
         case dailyChangeDisplay
         case refreshInterval
         case defaultAlertRepeatInterval
+        case extremeAlertCooldown
     }
 
     var statusBarIcon: String = "🌕"
@@ -101,6 +120,7 @@ struct AppSettings: Codable, Equatable {
     var dailyChangeDisplay: DailyChangeDisplayMode = .off
     var refreshInterval: Int = 5
     var defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
+    var extremeAlertCooldown: ExtremeAlertCooldown = .threeMinutes
 
     init(
         statusBarIcon: String = "🌕",
@@ -108,7 +128,8 @@ struct AppSettings: Codable, Equatable {
         statusBarProfitUsesColor: Bool = true,
         dailyChangeDisplay: DailyChangeDisplayMode = .off,
         refreshInterval: Int = 5,
-        defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
+        defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes,
+        extremeAlertCooldown: ExtremeAlertCooldown = .threeMinutes
     ) {
         self.statusBarIcon = statusBarIcon
         self.profitDisplay = profitDisplay
@@ -116,6 +137,7 @@ struct AppSettings: Codable, Equatable {
         self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
         self.defaultAlertRepeatInterval = defaultAlertRepeatInterval
+        self.extremeAlertCooldown = extremeAlertCooldown
     }
 
     var refreshTimeInterval: TimeInterval {
@@ -130,6 +152,7 @@ struct AppSettings: Codable, Equatable {
         dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
         defaultAlertRepeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .defaultAlertRepeatInterval) ?? .fiveMinutes
+        extremeAlertCooldown = try container.decodeIfPresent(ExtremeAlertCooldown.self, forKey: .extremeAlertCooldown) ?? .threeMinutes
     }
 
     func encode(to encoder: Encoder) throws {
@@ -140,6 +163,7 @@ struct AppSettings: Codable, Equatable {
         try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(defaultAlertRepeatInterval, forKey: .defaultAlertRepeatInterval)
+        try container.encode(extremeAlertCooldown, forKey: .extremeAlertCooldown)
     }
 }
 

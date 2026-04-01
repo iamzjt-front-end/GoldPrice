@@ -1982,7 +1982,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         guard !configs.isEmpty else { return }
 
         let now = Date()
-        let cooldown = TimeInterval(historyManager.settings.defaultAlertRepeatInterval.rawValue)
+        let cooldown = TimeInterval(historyManager.settings.extremeAlertCooldown.rawValue)
 
         for config in configs {
             guard config.isEnabled,
