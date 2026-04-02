@@ -6,6 +6,11 @@ private extension Color {
     static let chartTipLow = Color(red: 75 / 255, green: 166 / 255, blue: 110 / 255)
 }
 
+private enum MiniChartLayout {
+    static let chartHeight: CGFloat = 122
+    static let axisHeight: CGFloat = 22
+}
+
 private struct TrendRecord: Identifiable, Equatable {
     let timestamp: Date
     let value: Double
@@ -334,11 +339,11 @@ struct MiniChartView: View {
                     }
                 }
             }
-            .frame(height: 94)
+            .frame(height: MiniChartLayout.chartHeight)
 
             if xMarks.count == 3 {
                 axisLabelsRow
-                    .frame(height: 22)
+                    .frame(height: MiniChartLayout.axisHeight)
                     .padding(.top, 7)
             }
         }

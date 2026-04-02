@@ -9,6 +9,12 @@ extension NSColor {
     static let goldGreen = NSColor(red: 75/255, green: 166/255, blue: 110/255, alpha: 1)
 }
 
+private enum ChartPanelLayout {
+    static let panelWidth: CGFloat = 320
+    static let panelHeight: CGFloat = 268
+    static let placeholderHeight: CGFloat = 88
+}
+
 class ChartMenuItemView: NSView {
     private let hostingView: NSHostingView<ChartPanelContent>
 
@@ -164,22 +170,22 @@ private struct ChartPanelContent: View {
                 Text("加载中...")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                    .frame(height: 60)
+                    .frame(height: ChartPanelLayout.placeholderHeight)
             } else if let emptyMessage {
                 Text(emptyMessage)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                    .frame(height: 60)
+                    .frame(height: ChartPanelLayout.placeholderHeight)
             } else {
                 Text("数据积累中...")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                    .frame(height: 60)
+                    .frame(height: ChartPanelLayout.placeholderHeight)
             }
         }
         .padding(.horizontal, 14)
         .padding(.top, 14)
-        .padding(.bottom, 18)
-        .frame(width: 320, height: 238, alignment: .topLeading)
+        .padding(.bottom, 20)
+        .frame(width: ChartPanelLayout.panelWidth, height: ChartPanelLayout.panelHeight, alignment: .topLeading)
     }
 }
