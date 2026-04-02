@@ -980,7 +980,7 @@ private struct SettingsEditorContent: View {
                     }
                 )
 
-                Text("价格持续满足条件时，按此间隔重复提醒。")
+                Text("价格满足条件后，重复提醒会遵守此间隔。")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }

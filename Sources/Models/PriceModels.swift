@@ -190,7 +190,7 @@ enum AlertRepeatMode: String, Codable, CaseIterable {
         case .rearmOnCross:
             return "价格先回到阈值另一侧，再次穿越时才会提醒。"
         case .recurring:
-            return "价格持续满足条件时，按你设置的时间间隔重复提醒。"
+            return "价格满足条件后，会按你设置的时间间隔重复提醒。"
         }
     }
 }
@@ -269,7 +269,7 @@ struct PriceAlert: Codable, Equatable {
         case .rearmOnCross:
             return "重新穿越阈值后再次提醒"
         case .recurring:
-            return "持续满足条件时\(repeatInterval.description)"
+            return "满足条件后\(repeatInterval.description)提醒"
         }
     }
 
@@ -394,7 +394,7 @@ struct PercentageAlert: Codable, Equatable {
         case .rearmOnCross:
             return "重新穿越阈值后再次提醒"
         case .recurring:
-            return "持续满足条件时\(repeatInterval.description)"
+            return "满足条件后\(repeatInterval.description)提醒"
         }
     }
 
@@ -509,7 +509,7 @@ struct ProfitAlert: Codable, Equatable {
         case .rearmOnCross:
             return "重新穿越阈值后再次提醒"
         case .recurring:
-            return "持续满足条件时\(repeatInterval.description)"
+            return "满足条件后\(repeatInterval.description)提醒"
         }
     }
 

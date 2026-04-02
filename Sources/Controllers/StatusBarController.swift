@@ -226,6 +226,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var globalEventMonitor: Any?
     private var mainPanelAnchorFrame: NSRect?
     private let appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "--"
+    private var pendingPriceAlertStateNormalization = Set<String>()
+    private var pendingPercentageAlertStateNormalization = Set<String>()
 
     override init() {
         statusBar = NSStatusBar.system
@@ -234,6 +236,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
         dataService = GoldPriceService()
 
         super.init()
+
+        pendingPriceAlertStateNormalization = Set(historyManager.alerts.map(\.id))
+        pendingPercentageAlertStateNormalization = Set(historyManager.percentageAlerts.map(\.id))
 
         if let button = statusItem.button {
             let icon = historyManager.settings.statusBarIcon
@@ -1638,45 +1643,77 @@ class StatusBarController: NSObject, NSMenuDelegate {
             priceAlertGroupKey(sourceRawValue: alerts[index].sourceRawValue, condition: alerts[index].condition)
         })
 
-        for index in alerts.indices {
-            let alert = alerts[index]
+        for indices in groupedAlertIDs.values {
+            guard let firstIndex = indices.first else { continue }
 
-            guard let source = alert.source,
+            let firstAlert = alerts[firstIndex]
+            guard let source = firstAlert.source,
                   let info = dataService.allSourcePrices[source],
                   let currentPrice = info.priceDouble else { continue }
 
-            let activeAlertID = activePriceAlertID(
-                in: groupedAlertIDs[priceAlertGroupKey(sourceRawValue: alert.sourceRawValue, condition: alert.condition)] ?? [],
-                alerts: alerts,
-                currentPrice: currentPrice,
-                condition: alert.condition
-            )
-            let conditionMet = alert.id == activeAlertID
-            let shouldNotify: Bool
+            let metIndices = indices.filter { alerts[$0].isConditionMet(currentPrice: currentPrice) }
+            let newlyMetIndices = metIndices.filter { !alerts[$0].wasConditionMet }
+            let requiresNormalization = indices.contains { pendingPriceAlertStateNormalization.contains(alerts[$0].id) }
 
-            switch alert.repeatMode {
-            case .rearmOnCross:
-                shouldNotify = conditionMet && !alert.wasConditionMet
-            case .recurring:
-                if conditionMet && !alert.wasConditionMet {
-                    shouldNotify = true
-                } else if conditionMet, let lastTriggeredAt = alert.lastTriggeredAt {
-                    shouldNotify = now.timeIntervalSince(lastTriggeredAt) >= TimeInterval(alert.repeatInterval.rawValue)
-                } else {
-                    shouldNotify = conditionMet && alert.lastTriggeredAt == nil
+            if requiresNormalization {
+                for index in indices {
+                    pendingPriceAlertStateNormalization.remove(alerts[index].id)
+
+                    let conditionMet = metIndices.contains(index)
+                    if alerts[index].wasConditionMet != conditionMet {
+                        alerts[index].wasConditionMet = conditionMet
+                        didUpdateAlerts = true
+                    }
+                }
+                continue
+            }
+
+            if let notifyIndex = preferredPriceAlertIndex(
+                in: newlyMetIndices,
+                alerts: alerts,
+                condition: firstAlert.condition
+            ) {
+                let alert = alerts[notifyIndex]
+                if shouldNotify(
+                    repeatMode: alert.repeatMode,
+                    conditionMet: true,
+                    wasConditionMet: alert.wasConditionMet,
+                    lastTriggeredAt: alert.lastTriggeredAt,
+                    interval: alert.repeatInterval,
+                    now: now
+                ) {
+                    alerts[notifyIndex].triggered = true
+                    alerts[notifyIndex].lastTriggeredAt = now
+                    sendAlertNotification(alert: alert, currentPrice: currentPrice, unit: source.unit)
+                    didUpdateAlerts = true
+                }
+            } else if let activeIndex = preferredPriceAlertIndex(
+                in: metIndices,
+                alerts: alerts,
+                condition: firstAlert.condition
+            ) {
+                let activeAlert = alerts[activeIndex]
+                if shouldNotify(
+                    repeatMode: activeAlert.repeatMode,
+                    conditionMet: true,
+                    wasConditionMet: activeAlert.wasConditionMet,
+                    lastTriggeredAt: activeAlert.lastTriggeredAt,
+                    interval: activeAlert.repeatInterval,
+                    now: now
+                ) {
+                    alerts[activeIndex].triggered = true
+                    alerts[activeIndex].lastTriggeredAt = now
+                    sendAlertNotification(alert: activeAlert, currentPrice: currentPrice, unit: source.unit)
+                    didUpdateAlerts = true
                 }
             }
 
-            if shouldNotify {
-                alerts[index].triggered = true
-                alerts[index].lastTriggeredAt = now
-                sendAlertNotification(alert: alert, currentPrice: currentPrice, unit: source.unit)
-                didUpdateAlerts = true
-            }
-
-            if alerts[index].wasConditionMet != conditionMet {
-                alerts[index].wasConditionMet = conditionMet
-                didUpdateAlerts = true
+            for index in indices {
+                let conditionMet = metIndices.contains(index)
+                if alerts[index].wasConditionMet != conditionMet {
+                    alerts[index].wasConditionMet = conditionMet
+                    didUpdateAlerts = true
+                }
             }
         }
 
@@ -1686,25 +1723,22 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func activePriceAlertID(
+    private func preferredPriceAlertIndex(
         in indices: [Int],
         alerts: [PriceAlert],
-        currentPrice: Double,
         condition: AlertCondition
-    ) -> String? {
-        let candidates = indices.map { alerts[$0] }
+    ) -> Int? {
+        let candidates = indices.map { ($0, alerts[$0]) }
 
         switch condition {
         case .above:
             return candidates
-                .filter { currentPrice >= $0.targetPrice }
-                .max(by: { $0.targetPrice < $1.targetPrice })?
-                .id
+                .max(by: { $0.1.targetPrice < $1.1.targetPrice })?
+                .0
         case .below:
             return candidates
-                .filter { currentPrice <= $0.targetPrice }
-                .min(by: { $0.targetPrice < $1.targetPrice })?
-                .id
+                .min(by: { $0.1.targetPrice < $1.1.targetPrice })?
+                .0
         }
     }
 
@@ -1721,37 +1755,76 @@ class StatusBarController: NSObject, NSMenuDelegate {
             percentageAlertGroupKey(for: alerts[index])
         })
 
-        for index in alerts.indices {
-            let alert = alerts[index]
-            guard let source = alert.source,
-                  let metricValue = percentageMetricValue(for: source, metric: alert.metric) else { continue }
+        for indices in groupedAlertIDs.values {
+            guard let firstIndex = indices.first else { continue }
 
-            let activeAlertID = activePercentageAlertID(
-                in: groupedAlertIDs[percentageAlertGroupKey(for: alert)] ?? [],
-                alerts: alerts,
-                currentPercent: metricValue,
-                metric: alert.metric
-            )
-            let conditionMet = alert.id == activeAlertID
-            let shouldNotify = shouldNotify(
-                repeatMode: alert.repeatMode,
-                conditionMet: conditionMet,
-                wasConditionMet: alert.wasConditionMet,
-                lastTriggeredAt: alert.lastTriggeredAt,
-                interval: alert.repeatInterval,
-                now: now
-            )
+            let firstAlert = alerts[firstIndex]
+            guard let source = firstAlert.source,
+                  let metricValue = percentageMetricValue(for: source, metric: firstAlert.metric) else { continue }
 
-            if shouldNotify {
-                alerts[index].triggered = true
-                alerts[index].lastTriggeredAt = now
-                sendPercentageAlertNotification(alert: alert, currentPercent: metricValue)
-                didUpdateAlerts = true
+            let metIndices = indices.filter { alerts[$0].isConditionMet(currentPercent: metricValue) }
+            let newlyMetIndices = metIndices.filter { !alerts[$0].wasConditionMet }
+            let requiresNormalization = indices.contains { pendingPercentageAlertStateNormalization.contains(alerts[$0].id) }
+
+            if requiresNormalization {
+                for index in indices {
+                    pendingPercentageAlertStateNormalization.remove(alerts[index].id)
+
+                    let conditionMet = metIndices.contains(index)
+                    if alerts[index].wasConditionMet != conditionMet {
+                        alerts[index].wasConditionMet = conditionMet
+                        didUpdateAlerts = true
+                    }
+                }
+                continue
             }
 
-            if alerts[index].wasConditionMet != conditionMet {
-                alerts[index].wasConditionMet = conditionMet
-                didUpdateAlerts = true
+            if let notifyIndex = preferredPercentageAlertIndex(
+                in: newlyMetIndices,
+                alerts: alerts,
+                metric: firstAlert.metric
+            ) {
+                let alert = alerts[notifyIndex]
+                if shouldNotify(
+                    repeatMode: alert.repeatMode,
+                    conditionMet: true,
+                    wasConditionMet: alert.wasConditionMet,
+                    lastTriggeredAt: alert.lastTriggeredAt,
+                    interval: alert.repeatInterval,
+                    now: now
+                ) {
+                    alerts[notifyIndex].triggered = true
+                    alerts[notifyIndex].lastTriggeredAt = now
+                    sendPercentageAlertNotification(alert: alert, currentPercent: metricValue)
+                    didUpdateAlerts = true
+                }
+            } else if let activeIndex = preferredPercentageAlertIndex(
+                in: metIndices,
+                alerts: alerts,
+                metric: firstAlert.metric
+            ) {
+                let activeAlert = alerts[activeIndex]
+                if shouldNotify(
+                    repeatMode: activeAlert.repeatMode,
+                    conditionMet: true,
+                    wasConditionMet: activeAlert.wasConditionMet,
+                    lastTriggeredAt: activeAlert.lastTriggeredAt,
+                    interval: activeAlert.repeatInterval,
+                    now: now
+                ) {
+                    alerts[activeIndex].triggered = true
+                    alerts[activeIndex].lastTriggeredAt = now
+                    sendPercentageAlertNotification(alert: activeAlert, currentPercent: metricValue)
+                    didUpdateAlerts = true
+                }
+            }
+
+            for index in indices {
+                let conditionMet = metIndices.contains(index)
+                if alerts[index].wasConditionMet != conditionMet {
+                    alerts[index].wasConditionMet = conditionMet
+                    didUpdateAlerts = true
+                }
             }
         }
 
@@ -1761,32 +1834,28 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func activePercentageAlertID(
+    private func preferredPercentageAlertIndex(
         in indices: [Int],
         alerts: [PercentageAlert],
-        currentPercent: Double,
         metric: PercentageAlertMetric
-    ) -> String? {
-        let candidates = indices.map { alerts[$0] }
+    ) -> Int? {
+        let candidates = indices.map { ($0, alerts[$0]) }
 
         switch metric {
         case .netChange:
-            if currentPercent >= 0 {
+            if candidates.first?.1.normalizedTargetPercent ?? 0 >= 0 {
                 return candidates
-                    .filter { $0.normalizedTargetPercent >= 0 && currentPercent >= $0.normalizedTargetPercent }
-                    .max(by: { $0.normalizedTargetPercent < $1.normalizedTargetPercent })?
-                    .id
+                    .max(by: { $0.1.normalizedTargetPercent < $1.1.normalizedTargetPercent })?
+                    .0
             } else {
                 return candidates
-                    .filter { $0.normalizedTargetPercent < 0 && currentPercent <= $0.normalizedTargetPercent }
-                    .min(by: { $0.normalizedTargetPercent < $1.normalizedTargetPercent })?
-                    .id
+                    .min(by: { $0.1.normalizedTargetPercent < $1.1.normalizedTargetPercent })?
+                    .0
             }
         case .intradayRange:
             return candidates
-                .filter { currentPercent >= $0.normalizedTargetPercent }
-                .max(by: { $0.normalizedTargetPercent < $1.normalizedTargetPercent })?
-                .id
+                .max(by: { $0.1.normalizedTargetPercent < $1.1.normalizedTargetPercent })?
+                .0
         }
     }
 
@@ -1857,13 +1926,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case .rearmOnCross:
             return conditionMet && !wasConditionMet
         case .recurring:
-            if conditionMet && !wasConditionMet {
-                return true
-            } else if conditionMet, let lastTriggeredAt {
-                return now.timeIntervalSince(lastTriggeredAt) >= TimeInterval(interval.rawValue)
-            } else {
-                return conditionMet && lastTriggeredAt == nil
-            }
+            guard conditionMet else { return false }
+            guard let lastTriggeredAt else { return true }
+            return now.timeIntervalSince(lastTriggeredAt) >= TimeInterval(interval.rawValue)
         }
     }
 
