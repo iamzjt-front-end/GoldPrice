@@ -177,6 +177,7 @@ private final class MenuNavigationRowView: NSView {
 
 class StatusBarController: NSObject, NSMenuDelegate {
     private enum DetailPanelKind: Equatable {
+        case goldCircle
         case priceChart(GoldPriceSource)
         case position
         case settings
@@ -203,6 +204,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var cancellables = Set<AnyCancellable>()
     private let historyManager = PriceHistoryManager.shared
     private let officialChartService = OfficialIntradayChartService.shared
+    private let goldCircleService = GoldCircleService.shared
     private var menuIsOpen = false
     private var mainMenu: NSMenu?
     private var priceItems: [GoldPriceSource: NSMenuItem] = [:]
@@ -217,6 +219,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var trackedDayHighLow: [String: (high: Double, low: Double, lastHighNotify: Date?, lastLowNotify: Date?)] = [:]
     private var trackedDate: Date?
     private let panelModel = StatusBarPanelModel()
+    private var lastGoldCircleRefreshRequestAt: Date?
     private var mainPanelWindow: StatusPopupPanel?
     private var childPanelWindow: StatusPopupPanel?
     private var mainPanelHostingView: NSHostingView<StatusBarMainPanelView>?
@@ -225,6 +228,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var mainPanelAnchorFrame: NSRect?
+    private lazy var goldCircleDetailView = GoldCircleDetailPanelView()
     private let appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "--"
     private var pendingPriceAlertStateNormalization = Set<String>()
     private var pendingPercentageAlertStateNormalization = Set<String>()
@@ -412,6 +416,49 @@ class StatusBarController: NSObject, NSMenuDelegate {
         panelModel.extremePriceAlertEnabledCount = historyManager.extremePriceAlertConfigs.filter { $0.isEnabled }.count
     }
 
+    private func ensureGoldCircleContent(forceRefresh: Bool = false) {
+        let now = Date()
+        if !forceRefresh,
+           let lastGoldCircleRefreshRequestAt,
+           now.timeIntervalSince(lastGoldCircleRefreshRequestAt) < 60 {
+            return
+        }
+
+        if !forceRefresh,
+           panelModel.goldCircleItems.isEmpty,
+           let cached = goldCircleService.cachedItems() {
+            panelModel.goldCircleItems = cached
+            panelModel.goldCircleIsLoading = false
+            panelModel.goldCircleErrorMessage = nil
+        }
+
+        lastGoldCircleRefreshRequestAt = now
+        if panelModel.goldCircleItems.isEmpty {
+            panelModel.goldCircleIsLoading = true
+        }
+
+        goldCircleService.fetchPosts(forceRefresh: forceRefresh) { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success(let items):
+                self.panelModel.goldCircleItems = items
+                self.panelModel.goldCircleIsLoading = false
+                self.panelModel.goldCircleErrorMessage = nil
+            case .failure(let error):
+                self.panelModel.goldCircleIsLoading = false
+                self.panelModel.goldCircleErrorMessage = error.localizedDescription
+            }
+
+            self.refreshVisiblePanels()
+        }
+    }
+
+    private func openGoldCircleItem(_ item: GoldCirclePostItem) {
+        guard let url = item.jumpURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc
     private func toggleMainPanel() {
         if let mainPanelWindow, mainPanelWindow.isVisible {
@@ -463,6 +510,15 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func makeMainPanelRootView() -> StatusBarMainPanelView {
         StatusBarMainPanelView(
             model: panelModel,
+            onGoldCircleHover: { [weak self] in
+                self?.showHoverDetail(.goldCircle)
+            },
+            onGoldCircleOpenDetail: { [weak self] in
+                self?.showHoverDetail(.goldCircle)
+            },
+            onGoldCircleOpenItem: { [weak self] item in
+                self?.openGoldCircleItem(item)
+            },
             onPriceHover: { [weak self] source in
                 self?.showHoverDetail(.priceChart(source))
             },
@@ -586,6 +642,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         guard let activeDetailPanelKind else { return }
         switch activeDetailPanelKind {
+        case .goldCircle:
+            refreshGoldCircleChildPanel()
         case .priceChart(let source):
             refreshPriceChildPanel(source: source)
         case .position:
@@ -720,6 +778,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     private func makeChildPanelContent(for kind: DetailPanelKind) -> (NSView, NSSize)? {
         switch kind {
+        case .goldCircle:
+            let view = makeGoldCircleDetailView()
+            return (view, preferredSize(for: view))
         case .priceChart(let source):
             guard let view = makePriceChartView(for: source) else { return nil }
             return (view, preferredSize(for: view))
@@ -781,6 +842,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return ChartMenuItemView(source: source, info: info, records: records)
     }
 
+    private func makeGoldCircleDetailView() -> GoldCircleDetailPanelView {
+        goldCircleDetailView.ensurePageLoaded()
+        return goldCircleDetailView
+    }
+
     private func makePositionDetailView() -> NSView {
         let view = PositionDetailPanelView(position: historyManager.position, allSources: GoldPriceSource.domesticSources)
 
@@ -811,6 +877,27 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         return view
+    }
+
+    private func refreshGoldCircleChildPanel() {
+        guard let childPanelWindow,
+              childPanelWindow.isVisible,
+              case .goldCircle = activeDetailPanelKind
+        else { return }
+
+        guard let container = childPanelWindow.contentView as? PopupCardContainerView,
+              let view = container.hostedContentView as? GoldCircleDetailPanelView else {
+            showChildPanel(for: .goldCircle)
+            return
+        }
+
+        view.ensurePageLoaded()
+        view.update()
+
+        let size = preferredSize(for: view)
+        container.frame.size = size
+        childPanelWindow.setContentSize(size)
+        positionChildPanel(window: childPanelWindow, size: size)
     }
 
     private func refreshPriceChildPanel(source: GoldPriceSource) {

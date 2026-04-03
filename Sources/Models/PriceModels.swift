@@ -69,6 +69,109 @@ struct PriceRecord: Codable {
     let price: Double
 }
 
+// MARK: - Gold Circle
+
+struct GoldCirclePostItem: Identifiable, Equatable {
+    let contentId: String
+    let contentType: String
+    let authorName: String
+    let authorBadgeText: String
+    let authorBadgeTexts: [String]
+    let avatarURL: URL?
+    let publishedAtText: String
+    let title: String
+    let summary: String
+    let commentCountText: String
+    let likeCountText: String
+    let imageURLs: [URL]
+    let highlightText: String
+    let jumpURL: URL?
+    let fetchedAt: Date
+
+    var id: String { contentId }
+
+    var authorInitial: String {
+        authorName.trimmingCharacters(in: .whitespacesAndNewlines).first.map(String.init) ?? "金"
+    }
+
+    var interactionText: String {
+        let parts = [
+            commentCountText.isEmpty ? "" : "\(commentCountText)评论",
+            likeCountText.isEmpty ? "" : "\(likeCountText)赞"
+        ].filter { !$0.isEmpty }
+        return parts.joined(separator: " · ")
+    }
+
+    var metadataBadgeText: String {
+        let trimmedHighlight = highlightText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHighlight.isEmpty {
+            return trimmedHighlight
+        }
+        return ""
+    }
+
+    var authorBadgeLabel: String {
+        let shortBadge = authorBadgeTexts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && $0.count <= 4 }
+        guard let shortBadge else {
+            return ""
+        }
+        return shortBadge
+    }
+
+    var contentTitle: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            return ""
+        }
+        if trimmedTitle == trimmedSummary {
+            return ""
+        }
+        return trimmedTitle
+    }
+
+    var primaryText: String {
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSummary.isEmpty {
+            return trimmedSummary
+        }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var commentButtonText: String {
+        if commentCountText.isEmpty {
+            return "评论"
+        }
+        return "评论 \(commentCountText)"
+    }
+
+    var likeDisplayText: String {
+        if likeCountText.isEmpty {
+            return "点赞"
+        }
+        return "点赞 \(likeCountText)"
+    }
+
+    var hasCommentDetail: Bool {
+        jumpURL != nil
+    }
+
+    var badgeText: String {
+        if !authorBadgeText.isEmpty {
+            return authorBadgeText
+        }
+        if imageURLs.count > 1 {
+            return "\(imageURLs.count)图"
+        }
+        if imageURLs.count == 1 {
+            return "配图"
+        }
+        return contentType
+    }
+}
+
 // MARK: - Position (持仓)
 
 enum ProfitDisplayMode: String, Codable, CaseIterable {

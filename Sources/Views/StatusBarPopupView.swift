@@ -37,6 +37,9 @@ final class StatusBarPanelModel: ObservableObject {
     @Published var position: PositionInfo?
     @Published var lastUpdateTime: Date = Date()
     @Published var appVersion: String = "--"
+    @Published var goldCircleItems: [GoldCirclePostItem] = []
+    @Published var goldCircleIsLoading: Bool = false
+    @Published var goldCircleErrorMessage: String?
     @Published var alertCount: Int = 0
     @Published var percentageAlertCount: Int = 0
     @Published var profitAlertCount: Int = 0
@@ -102,6 +105,9 @@ struct HoverPopupContainer<Main: View, Child: View>: View {
 struct StatusBarMainPanelView: View {
     @ObservedObject var model: StatusBarPanelModel
 
+    let onGoldCircleHover: () -> Void
+    let onGoldCircleOpenDetail: () -> Void
+    let onGoldCircleOpenItem: (GoldCirclePostItem) -> Void
     let onPriceHover: (GoldPriceSource) -> Void
     let onPositionHover: () -> Void
     let onSettingsClick: () -> Void
@@ -113,6 +119,14 @@ struct StatusBarMainPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            goldCircleSection
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+
+            Divider()
+                .padding(.horizontal, 14)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("更新于 \(timeText)")
                     .font(.system(size: 11, weight: .medium))
@@ -123,7 +137,7 @@ struct StatusBarMainPanelView: View {
                     .foregroundColor(.secondary)
             }
                 .padding(.horizontal, 14)
-                .padding(.top, 14)
+                .padding(.top, 10)
                 .padding(.bottom, 8)
 
             Divider()
@@ -213,6 +227,69 @@ struct StatusBarMainPanelView: View {
             .foregroundColor(.secondary)
             .padding(.horizontal, 14)
             .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private var goldCircleSection: some View {
+        Button(action: onGoldCircleOpenDetail) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.12))
+
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("金友圈")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.primary)
+
+                        Text("最新分享")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text(goldCircleEntrySubtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.primary.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 0.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { inside in
+            if inside {
+                onGoldCircleHover()
+            }
+        }
+    }
+
+    private var goldCircleEntrySubtitle: String {
+        "点开看看圈友们的最新动态。"
     }
 
     private func priceRow(_ source: GoldPriceSource) -> some View {
