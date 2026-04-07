@@ -9,6 +9,7 @@ class GoldPriceService: ObservableObject {
 
     private var timer: Timer?
     private let historyManager = PriceHistoryManager.shared
+    private let officialChartService = OfficialIntradayChartService.shared
     private var fetchGeneration: Int = 0
 
     init() {}
@@ -142,10 +143,7 @@ class GoldPriceService: ObservableObject {
                     info.changeRate = (datas["upAndDownRate"] as? String) ?? ""
                     info.changeAmount = (datas["upAndDownAmt"] as? String) ?? ""
 
-                    DispatchQueue.main.async {
-                        self.updateHighLow(&info, source: .jdZsFinance)
-                        completion(info)
-                    }
+                    self.enrichDomesticInfoWithOfficialSeries(info, source: .jdZsFinance, completion: completion)
                 } else {
                     completion(nil)
                 }
@@ -181,10 +179,7 @@ class GoldPriceService: ObservableObject {
                     info.changeRate = (datas["upAndDownRate"] as? String) ?? ""
                     info.changeAmount = (datas["upAndDownAmt"] as? String) ?? ""
 
-                    DispatchQueue.main.async {
-                        self.updateHighLow(&info, source: .jdMsFinance)
-                        completion(info)
-                    }
+                    self.enrichDomesticInfoWithOfficialSeries(info, source: .jdMsFinance, completion: completion)
                 } else {
                     completion(nil)
                 }
@@ -302,6 +297,58 @@ class GoldPriceService: ObservableObject {
     }
 
     // MARK: - High/Low from history
+
+    private func enrichDomesticInfoWithOfficialSeries(
+        _ info: PriceInfo,
+        source: GoldPriceSource,
+        completion: @escaping (PriceInfo?) -> Void
+    ) {
+        officialChartService.fetchIntradaySeries(for: source) { [weak self] result in
+            guard let self else {
+                completion(info)
+                return
+            }
+
+            var enrichedInfo = info
+
+            switch result {
+            case .success(let series):
+                self.applyHighLow(from: series, to: &enrichedInfo)
+                self.historyManager.recordPrices(series.records, for: source.rawValue)
+            case .failure:
+                if let latestSeries = self.officialChartService.latestSeries(for: source) {
+                    self.applyHighLow(from: latestSeries, to: &enrichedInfo)
+                    self.historyManager.recordPrices(latestSeries.records, for: source.rawValue)
+                } else {
+                    DispatchQueue.main.async {
+                        self.updateHighLow(&enrichedInfo, source: source)
+                        completion(enrichedInfo)
+                    }
+                    return
+                }
+            }
+
+            completion(enrichedInfo)
+        }
+    }
+
+    private func applyHighLow(from series: IntradayChartSeries, to info: inout PriceInfo) {
+        if let high = series.high {
+            info.dayHigh = String(format: "%.2f", high)
+        }
+        if let low = series.low {
+            info.dayLow = String(format: "%.2f", low)
+        }
+
+        if let price = info.priceDouble {
+            if Double(info.dayHigh) == nil || info.dayHigh == "--" {
+                info.dayHigh = String(format: "%.2f", price)
+            }
+            if Double(info.dayLow) == nil || info.dayLow == "--" {
+                info.dayLow = String(format: "%.2f", price)
+            }
+        }
+    }
 
     private func updateHighLow(_ info: inout PriceInfo, source: GoldPriceSource) {
         let (high, low) = historyManager.getHighLow(for: source.rawValue)
