@@ -655,9 +655,47 @@ struct ExtremePriceAlertConfig: Codable, Equatable {
 }
 
 struct PositionInfo: Codable, Equatable {
-    var grams: Double
-    var avgPrice: Double
+    enum CodingKeys: String, CodingKey {
+        case lots
+        case grams
+        case avgPrice
+        case sourceRawValue
+    }
+
+    struct Lot: Codable, Equatable, Identifiable {
+        var id: String
+        var grams: Double
+        var price: Double
+
+        init(id: String = UUID().uuidString, grams: Double, price: Double) {
+            self.id = id
+            self.grams = grams
+            self.price = price
+        }
+    }
+
+    var lots: [Lot]
     var sourceRawValue: String
+
+    init(lots: [Lot], sourceRawValue: String) {
+        self.lots = lots.filter { $0.grams > 0 && $0.price > 0 }
+        self.sourceRawValue = sourceRawValue
+    }
+
+    init(grams: Double, avgPrice: Double, sourceRawValue: String) {
+        self.init(lots: [Lot(grams: grams, price: avgPrice)], sourceRawValue: sourceRawValue)
+    }
+
+    var grams: Double {
+        lots.reduce(0) { $0 + $1.grams }
+    }
+
+    var avgPrice: Double {
+        let totalGrams = grams
+        guard totalGrams > 0 else { return 0 }
+        let totalCost = lots.reduce(0) { $0 + ($1.grams * $1.price) }
+        return totalCost / totalGrams
+    }
 
     var source: GoldPriceSource? {
         GoldPriceSource(rawValue: sourceRawValue)
@@ -670,5 +708,26 @@ struct PositionInfo: Codable, Equatable {
     func profitRate(currentPrice: Double) -> Double {
         guard avgPrice > 0 else { return 0 }
         return (currentPrice - avgPrice) / avgPrice * 100
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sourceRawValue = try container.decode(String.self, forKey: .sourceRawValue)
+
+        if let decodedLots = try container.decodeIfPresent([Lot].self, forKey: .lots), !decodedLots.isEmpty {
+            lots = decodedLots.filter { $0.grams > 0 && $0.price > 0 }
+        } else {
+            let legacyGrams = try container.decode(Double.self, forKey: .grams)
+            let legacyAvgPrice = try container.decode(Double.self, forKey: .avgPrice)
+            lots = [Lot(grams: legacyGrams, price: legacyAvgPrice)].filter { $0.grams > 0 && $0.price > 0 }
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(lots, forKey: .lots)
+        try container.encode(grams, forKey: .grams)
+        try container.encode(avgPrice, forKey: .avgPrice)
+        try container.encode(sourceRawValue, forKey: .sourceRawValue)
     }
 }

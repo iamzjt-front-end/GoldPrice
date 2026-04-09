@@ -1,6 +1,11 @@
 import SwiftUI
 import AppKit
 
+private enum MainPanelLayout {
+    static let panelWidth: CGFloat = 320
+    static let rowWidth: CGFloat = 300
+}
+
 private struct PriceRowRepresentable: NSViewRepresentable {
     let source: GoldPriceSource
     let info: PriceInfo
@@ -202,7 +207,7 @@ struct StatusBarMainPanelView: View {
             .padding(.top, 6)
             .padding(.bottom, 12)
         }
-        .frame(width: 300, alignment: .leading)
+        .frame(width: MainPanelLayout.panelWidth, alignment: .leading)
         .background(panelBackground)
     }
 
@@ -299,7 +304,7 @@ struct StatusBarMainPanelView: View {
         }, onActivate: {
             onPriceHover(source)
         })
-        .frame(width: 280, height: 28)
+        .frame(width: MainPanelLayout.rowWidth, height: 28)
     }
 
     private var positionRow: some View {
@@ -313,7 +318,7 @@ struct StatusBarMainPanelView: View {
                 }, onActivate: {
                     onPositionHover()
                 })
-                .frame(width: 280, height: 44)
+                .frame(width: MainPanelLayout.rowWidth, height: 44)
             } else {
                 HStack {
                     Text("我的持仓")

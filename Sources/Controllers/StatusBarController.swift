@@ -3,6 +3,11 @@ import AppKit
 import Combine
 import UserNotifications
 
+private enum MainMenuRowLayout {
+    static let width: CGFloat = 300
+    static let height: CGFloat = 28
+}
+
 private final class StatusPopupPanel: NSPanel {
     var onOrderOut: (() -> Void)?
     var onClose: (() -> Void)?
@@ -111,7 +116,7 @@ private final class MenuMetaHeaderView: NSView {
     private let label = NSTextField(labelWithString: "")
 
     init(text: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
+        super.init(frame: NSRect(x: 0, y: 0, width: MainMenuRowLayout.width, height: MainMenuRowLayout.height))
 
         label.font = .systemFont(ofSize: 11, weight: .medium)
         label.textColor = .tertiaryLabelColor
@@ -121,8 +126,8 @@ private final class MenuMetaHeaderView: NSView {
         addSubview(label)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 280),
-            heightAnchor.constraint(equalToConstant: 28),
+            widthAnchor.constraint(equalToConstant: MainMenuRowLayout.width),
+            heightAnchor.constraint(equalToConstant: MainMenuRowLayout.height),
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
@@ -142,7 +147,7 @@ private final class MenuNavigationRowView: NSView {
     private let chevronLabel = NSTextField(labelWithString: "›")
 
     init(title: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
+        super.init(frame: NSRect(x: 0, y: 0, width: MainMenuRowLayout.width, height: MainMenuRowLayout.height))
 
         titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.textColor = .labelColor
@@ -158,8 +163,8 @@ private final class MenuNavigationRowView: NSView {
         addSubview(chevronLabel)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 280),
-            heightAnchor.constraint(equalToConstant: 28),
+            widthAnchor.constraint(equalToConstant: MainMenuRowLayout.width),
+            heightAnchor.constraint(equalToConstant: MainMenuRowLayout.height),
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             chevronLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),

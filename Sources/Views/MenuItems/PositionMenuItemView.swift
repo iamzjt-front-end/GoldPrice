@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+private enum PositionMenuItemLayout {
+    static let rowWidth: CGFloat = 300
+    static let rowHeight: CGFloat = 44
+}
+
 // MARK: - Base class for editable menu item views (handles focus & paste in NSMenu)
 
 class EditableMenuItemView: NSView {
@@ -132,7 +137,7 @@ class PositionDisplayView: NSView {
     ) {
         self.onHover = onHover
         self.onActivate = onActivate
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 44))
+        super.init(frame: NSRect(x: 0, y: 0, width: PositionMenuItemLayout.rowWidth, height: PositionMenuItemLayout.rowHeight))
         setupView()
         update(position: position, currentPrice: currentPrice)
     }
@@ -155,7 +160,7 @@ class PositionDisplayView: NSView {
     override func mouseDown(with event: NSEvent) { onActivate() }
 
     func update(position: PositionInfo, currentPrice: Double?) {
-        gramsLabel.stringValue = "\(String(format: "%.2f", position.grams))克"
+        gramsLabel.stringValue = "\(String(format: "%.4f", position.grams))克"
         avgPriceLabel.stringValue = "均价 \(String(format: "%.2f", position.avgPrice)) 元/克"
 
         if let currentPrice {
@@ -216,8 +221,8 @@ class PositionDisplayView: NSView {
         addSubview(container)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 280),
-            heightAnchor.constraint(equalToConstant: 44),
+            widthAnchor.constraint(equalToConstant: PositionMenuItemLayout.rowWidth),
+            heightAnchor.constraint(equalToConstant: PositionMenuItemLayout.rowHeight),
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             container.topAnchor.constraint(equalTo: topAnchor, constant: 6),
@@ -298,6 +303,18 @@ class PositionDetailPanelView: NSView {
         wantsLayer = true
         editorView.autoresizingMask = [.width]
         addSubview(editorView)
+        editorView.setOnContentChange { [weak self] in
+            guard let self else { return }
+            self.rebuildLayout()
+
+            guard let window = self.window else { return }
+            var frame = window.frame
+            let targetSize = self.preferredPanelSize()
+            let deltaHeight = targetSize.height - frame.height
+            frame.size = targetSize
+            frame.origin.y -= deltaHeight
+            window.setFrame(frame, display: true, animate: true)
+        }
 
         dividerContainer.autoresizingMask = [.width]
         divider.boxType = .separator
@@ -432,7 +449,7 @@ private struct PositionDisplayContent: View {
                     .foregroundColor(.secondary)
 
                 HStack(spacing: 6) {
-                    Text("\(String(format: "%.2f", position.grams))克")
+                    Text("\(String(format: "%.4f", position.grams))克")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.primary)
 
@@ -578,18 +595,69 @@ private struct PositionChartPanelContent: View {
 // MARK: - Submenu editor (right-side popover)
 
 class PositionEditorView: EditableMenuItemView {
-    init(position: PositionInfo?, allSources: [GoldPriceSource]) {
-        super.init(contentView: NSHostingView(rootView: PositionEditorContent(
+    private let hostingView: NSHostingView<PositionEditorContent>
+    private var externalContentChange: (() -> Void)?
+
+    init(
+        position: PositionInfo?,
+        allSources: [GoldPriceSource],
+        onContentChange: (() -> Void)? = nil
+    ) {
+        let hostingView = NSHostingView(rootView: PositionEditorContent(
             position: position,
-            allSources: allSources
-        )), minWidth: 320)
+            allSources: allSources,
+            onContentChange: {}
+        ))
+        self.hostingView = hostingView
+        self.externalContentChange = onContentChange
+        super.init(contentView: hostingView, minWidth: 320, dynamicallyResizes: true)
+        hostingView.rootView = PositionEditorContent(
+            position: position,
+            allSources: allSources,
+            onContentChange: { [weak self] in
+                DispatchQueue.main.async {
+                    self?.updateLayoutSizeIfNeeded()
+                    self?.externalContentChange?()
+                }
+            }
+        )
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    func setOnContentChange(_ handler: @escaping () -> Void) {
+        externalContentChange = handler
+    }
+}
+
+private struct PositionLotDraft: Identifiable, Equatable {
+    let id: String
+    var priceText: String
+    var gramsText: String
+
+    init(
+        id: String = UUID().uuidString,
+        priceText: String = "",
+        gramsText: String = ""
+    ) {
+        self.id = id
+        self.priceText = priceText
+        self.gramsText = gramsText
+    }
+
+    init(lot: PositionInfo.Lot) {
+        self.id = lot.id
+        self.priceText = String(format: "%.2f", lot.price)
+        self.gramsText = String(format: "%.4f", lot.grams)
+    }
+
+    var hasAnyInput: Bool {
+        !priceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !gramsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 private struct PositionEditorContent: View {
-    @State private var gramsText: String
-    @State private var avgPriceText: String
+    @State private var lotDrafts: [PositionLotDraft]
     @State private var selectedSource: GoldPriceSource
     @State private var feedbackText: String?
     @State private var feedbackIsError = false
@@ -597,13 +665,48 @@ private struct PositionEditorContent: View {
     @State private var hasSavedPosition: Bool
 
     let allSources: [GoldPriceSource]
+    let onContentChange: () -> Void
 
-    init(position: PositionInfo?, allSources: [GoldPriceSource]) {
+    init(position: PositionInfo?, allSources: [GoldPriceSource], onContentChange: @escaping () -> Void) {
         self.allSources = allSources
-        _gramsText = State(initialValue: position.map { String(format: "%.2f", $0.grams) } ?? "")
-        _avgPriceText = State(initialValue: position.map { String(format: "%.2f", $0.avgPrice) } ?? "")
+        self.onContentChange = onContentChange
+        let initialDrafts = position?.lots.map(PositionLotDraft.init(lot:)) ?? [PositionLotDraft()]
+        _lotDrafts = State(initialValue: initialDrafts.isEmpty ? [PositionLotDraft()] : initialDrafts)
         _selectedSource = State(initialValue: position?.source ?? allSources.first ?? .jdZsFinance)
         _hasSavedPosition = State(initialValue: position != nil)
+    }
+
+    private var validLots: [PositionInfo.Lot] {
+        lotDrafts.compactMap { draft in
+            guard let price = Double(draft.priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let grams = Double(draft.gramsText.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  price > 0,
+                  grams > 0 else {
+                return nil
+            }
+            return PositionInfo.Lot(id: draft.id, grams: grams, price: price)
+        }
+    }
+
+    private var hasInvalidLotInput: Bool {
+        lotDrafts.contains { draft in
+            guard draft.hasAnyInput else { return false }
+            guard let price = Double(draft.priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let grams = Double(draft.gramsText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                return true
+            }
+            return price <= 0 || grams <= 0
+        }
+    }
+
+    private var totalGrams: Double {
+        validLots.reduce(0) { $0 + $1.grams }
+    }
+
+    private var weightedAveragePrice: Double {
+        guard totalGrams > 0 else { return 0 }
+        let totalCost = validLots.reduce(0) { $0 + ($1.grams * $1.price) }
+        return totalCost / totalGrams
     }
 
     var body: some View {
@@ -622,9 +725,29 @@ private struct PositionEditorContent: View {
                 }
             }
 
-            HStack(alignment: .top, spacing: 10) {
-                positionField(title: "买入均价 (元/克)", placeholder: "例如: 980.50", text: $avgPriceText)
-                positionField(title: "持仓克数", placeholder: "例如: 10.00", text: $gramsText)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("买入明细")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button("新增一笔") {
+                        lotDrafts.append(PositionLotDraft())
+                        onContentChange()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                summaryCard
+
+                VStack(spacing: 8) {
+                    ForEach($lotDrafts) { $draft in
+                        lotRow(draft: $draft)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 7) {
@@ -677,12 +800,15 @@ private struct PositionEditorContent: View {
     // MARK: - Actions
 
     private func performSave() {
-        guard let grams = Double(gramsText), let avgPrice = Double(avgPriceText),
-              grams > 0, avgPrice > 0 else {
-            showFeedback("请输入有效的克数和均价", isError: true)
+        guard !validLots.isEmpty else {
+            showFeedback("请至少录入一笔有效买入", isError: true)
             return
         }
-        let pos = PositionInfo(grams: grams, avgPrice: avgPrice, sourceRawValue: selectedSource.rawValue)
+        guard !hasInvalidLotInput else {
+            showFeedback("请完善每笔买入的价格和克数", isError: true)
+            return
+        }
+        let pos = PositionInfo(lots: validLots, sourceRawValue: selectedSource.rawValue)
         PriceHistoryManager.shared.savePosition(pos)
         hasSavedPosition = true
         showFeedback("已保存", isError: false)
@@ -690,11 +816,11 @@ private struct PositionEditorContent: View {
 
     private func performClear() {
         PriceHistoryManager.shared.clearPosition()
-        gramsText = ""
-        avgPriceText = ""
+        lotDrafts = [PositionLotDraft()]
         showClearConfirm = false
         hasSavedPosition = false
         showFeedback("已清仓", isError: false)
+        onContentChange()
     }
 
     private func showFeedback(_ text: String, isError: Bool) {
@@ -705,17 +831,80 @@ private struct PositionEditorContent: View {
         }
     }
 
-    private func positionField(title: String, placeholder: String, text: Binding<String>) -> some View {
+    private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
+            HStack(spacing: 10) {
+                metricChip(title: "总克数", value: totalGrams > 0 ? "\(String(format: "%.4f", totalGrams)) 克" : "--")
+                metricChip(title: "自动均价", value: totalGrams > 0 ? "\(String(format: "%.2f", weightedAveragePrice)) 元/克" : "--")
+            }
+
+            Text("已录入 \(validLots.count) 笔有效买入，保存后将按加权均价计算收益。")
+                .font(.system(size: 10))
                 .foregroundColor(.secondary)
-            TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 13))
-                .frame(maxWidth: .infinity)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
+    }
+
+    private func metricChip(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func lotRow(draft: Binding<PositionLotDraft>) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("买入价 (元/克)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                PastableTextField(text: draft.priceText, placeholder: "例如: 980.50")
+                    .frame(maxWidth: .infinity)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("克数")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                PastableTextField(text: draft.gramsText, placeholder: "例如: 10.0000")
+                    .frame(maxWidth: .infinity)
+            }
+
+            Button(action: {
+                removeLot(id: draft.wrappedValue.id)
+            }) {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(lotDrafts.count > 1 ? .red : .secondary.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 24)
+            .disabled(lotDrafts.count <= 1)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.05), lineWidth: 0.5)
+        )
+    }
+
+    private func removeLot(id: String) {
+        guard lotDrafts.count > 1 else { return }
+        lotDrafts.removeAll { $0.id == id }
+        onContentChange()
     }
 }
 

@@ -1,5 +1,10 @@
 import AppKit
 
+private enum PriceMenuItemLayout {
+    static let width: CGFloat = 300
+    static let height: CGFloat = 28
+}
+
 class PriceMenuItemView: NSView {
     private var trackingArea: NSTrackingArea?
     private let onHover: (Bool) -> Void
@@ -17,7 +22,7 @@ class PriceMenuItemView: NSView {
     ) {
         self.onHover = onHover
         self.onActivate = onActivate
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
+        super.init(frame: NSRect(x: 0, y: 0, width: PriceMenuItemLayout.width, height: PriceMenuItemLayout.height))
 
         setupView()
         update(source: source, info: info)
@@ -81,8 +86,8 @@ class PriceMenuItemView: NSView {
         addSubview(container)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 280),
-            heightAnchor.constraint(equalToConstant: 28),
+            widthAnchor.constraint(equalToConstant: PriceMenuItemLayout.width),
+            heightAnchor.constraint(equalToConstant: PriceMenuItemLayout.height),
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             container.topAnchor.constraint(equalTo: topAnchor, constant: 3),
