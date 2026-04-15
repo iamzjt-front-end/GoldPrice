@@ -6,6 +6,10 @@ private enum PositionMenuItemLayout {
     static let rowHeight: CGFloat = 44
 }
 
+private enum PositionDetailLayout {
+    static let panelWidth: CGFloat = 420
+}
+
 // MARK: - Base class for editable menu item views (handles focus & paste in NSMenu)
 
 class EditableMenuItemView: NSView {
@@ -161,7 +165,9 @@ class PositionDisplayView: NSView {
 
     func update(position: PositionInfo, currentPrice: Double?) {
         gramsLabel.stringValue = "\(String(format: "%.4f", position.grams))克"
-        avgPriceLabel.stringValue = "均价 \(String(format: "%.2f", position.avgPrice)) 元/克"
+        let costLabel = position.totalFee > 0 ? "成本" : "均价"
+        let costPrice = position.totalFee > 0 ? position.breakEvenPrice : position.avgPrice
+        avgPriceLabel.stringValue = "\(costLabel) \(String(format: "%.2f", costPrice)) 元/克"
 
         if let currentPrice {
             let profit = position.profit(currentPrice: currentPrice)
@@ -290,14 +296,14 @@ class PositionChartMenuItemView: NSView {
 }
 
 class PositionDetailPanelView: NSView {
-    private let contentWidth: CGFloat = 320
+    private let contentWidth: CGFloat = PositionDetailLayout.panelWidth
     private let editorView: PositionEditorView
     private let dividerContainer = NSView()
     private let divider = NSBox()
     private var chartView: PositionChartMenuItemView?
 
-    init(position: PositionInfo?, allSources: [GoldPriceSource]) {
-        self.editorView = PositionEditorView(position: position, allSources: allSources)
+    init(position: PositionInfo?, allSources: [GoldPriceSource], sourcePrices: [GoldPriceSource: PriceInfo]) {
+        self.editorView = PositionEditorView(position: position, allSources: allSources, sourcePrices: sourcePrices)
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -453,7 +459,7 @@ private struct PositionDisplayContent: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.primary)
 
-                    Text("均价 \(String(format: "%.2f", position.avgPrice)) 元/克")
+                    Text("\(position.totalFee > 0 ? "成本" : "均价") \(String(format: "%.2f", position.totalFee > 0 ? position.breakEvenPrice : position.avgPrice)) 元/克")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -533,10 +539,12 @@ private struct PositionChartPanelContent: View {
                     .foregroundColor(profitColor)
             }
 
-            HStack(spacing: 12) {
-                Text("现价 \(String(format: "%.2f", currentPrice)) 元/克")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+            HStack(alignment: .bottom, spacing: 16) {
+                chartMetaMetric(title: "现价", value: "\(String(format: "%.2f", currentPrice)) 元/克")
+
+                if position.totalFee > 0 {
+                    chartMetaMetric(title: "保本", value: "\(String(format: "%.2f", position.breakEvenPrice)) 元/克")
+                }
 
                 if let highProfit = highProfit, let lowProfit = lowProfit {
                     Spacer()
@@ -588,7 +596,19 @@ private struct PositionChartPanelContent: View {
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: PositionDetailLayout.panelWidth)
+    }
+
+    private func chartMetaMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Text(value)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+        }
     }
 }
 
@@ -601,19 +621,22 @@ class PositionEditorView: EditableMenuItemView {
     init(
         position: PositionInfo?,
         allSources: [GoldPriceSource],
+        sourcePrices: [GoldPriceSource: PriceInfo],
         onContentChange: (() -> Void)? = nil
     ) {
         let hostingView = NSHostingView(rootView: PositionEditorContent(
             position: position,
             allSources: allSources,
+            sourcePrices: sourcePrices,
             onContentChange: {}
         ))
         self.hostingView = hostingView
         self.externalContentChange = onContentChange
-        super.init(contentView: hostingView, minWidth: 320, dynamicallyResizes: true)
+        super.init(contentView: hostingView, minWidth: PositionDetailLayout.panelWidth, dynamicallyResizes: true)
         hostingView.rootView = PositionEditorContent(
             position: position,
             allSources: allSources,
+            sourcePrices: sourcePrices,
             onContentChange: { [weak self] in
                 DispatchQueue.main.async {
                     self?.updateLayoutSizeIfNeeded()
@@ -658,6 +681,8 @@ private struct PositionLotDraft: Identifiable, Equatable {
 
 private struct PositionEditorContent: View {
     @State private var lotDrafts: [PositionLotDraft]
+    @State private var feeMode: PositionFeeMode
+    @State private var feeText: String
     @State private var selectedSource: GoldPriceSource
     @State private var feedbackText: String?
     @State private var feedbackIsError = false
@@ -665,13 +690,24 @@ private struct PositionEditorContent: View {
     @State private var hasSavedPosition: Bool
 
     let allSources: [GoldPriceSource]
+    let sourcePrices: [GoldPriceSource: PriceInfo]
     let onContentChange: () -> Void
 
-    init(position: PositionInfo?, allSources: [GoldPriceSource], onContentChange: @escaping () -> Void) {
+    init(
+        position: PositionInfo?,
+        allSources: [GoldPriceSource],
+        sourcePrices: [GoldPriceSource: PriceInfo],
+        onContentChange: @escaping () -> Void
+    ) {
         self.allSources = allSources
+        self.sourcePrices = sourcePrices
         self.onContentChange = onContentChange
         let initialDrafts = position?.lots.map(PositionLotDraft.init(lot:)) ?? [PositionLotDraft()]
         _lotDrafts = State(initialValue: initialDrafts.isEmpty ? [PositionLotDraft()] : initialDrafts)
+        let initialFeeMode = position?.feeMode ?? .perGram
+        let initialFeeValue = position?.feeValue ?? 0
+        _feeMode = State(initialValue: initialFeeMode)
+        _feeText = State(initialValue: initialFeeValue > 0 ? String(format: "%.4f", initialFeeValue) : "")
         _selectedSource = State(initialValue: position?.source ?? allSources.first ?? .jdZsFinance)
         _hasSavedPosition = State(initialValue: position != nil)
     }
@@ -699,6 +735,21 @@ private struct PositionEditorContent: View {
         }
     }
 
+    private var trimmedFeeText: String {
+        feeText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var totalFeeValue: Double {
+        guard !trimmedFeeText.isEmpty else { return 0 }
+        return max(0, Double(trimmedFeeText) ?? 0)
+    }
+
+    private var hasInvalidFeeInput: Bool {
+        guard !trimmedFeeText.isEmpty else { return false }
+        guard let fee = Double(trimmedFeeText) else { return true }
+        return fee < 0
+    }
+
     private var totalGrams: Double {
         validLots.reduce(0) { $0 + $1.grams }
     }
@@ -709,20 +760,39 @@ private struct PositionEditorContent: View {
         return totalCost / totalGrams
     }
 
+    private var breakEvenPrice: Double {
+        guard totalGrams > 0 else { return 0 }
+        return (validLots.reduce(0) { $0 + ($1.grams * $1.price) } + calculatedFeeAmount) / totalGrams
+    }
+
+    private var calculatedFeeAmount: Double {
+        switch feeMode {
+        case .perGram:
+            return totalFeeValue * totalGrams
+        case .percentage:
+            return validLots.reduce(0) { $0 + ($1.grams * $1.price) } * totalFeeValue / 100
+        }
+    }
+
+    private var feeRuleText: String {
+        switch feeMode {
+        case .perGram:
+            return "\(String(format: "%.4f", totalFeeValue)) 元/克"
+        case .percentage:
+            return "\(String(format: "%.4f", totalFeeValue))%"
+        }
+    }
+
+    private var selectedSourceCurrentPrice: Double? {
+        sourcePrices[selectedSource]?.priceDouble
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("持仓设置")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
-
-                Spacer()
-
-                if let feedbackText {
-                    Text(feedbackText)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(feedbackIsError ? .red : .goldGreen)
-                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -744,11 +814,13 @@ private struct PositionEditorContent: View {
                 summaryCard
 
                 VStack(spacing: 8) {
-                    ForEach($lotDrafts) { $draft in
-                        lotRow(draft: $draft)
+                    ForEach(Array(lotDrafts.indices), id: \.self) { index in
+                        lotRow(draft: $lotDrafts[index], index: index)
                     }
                 }
             }
+
+            feeInputSection
 
             VStack(alignment: .leading, spacing: 7) {
                 Text("收益计算相对数据源")
@@ -788,13 +860,22 @@ private struct PositionEditorContent: View {
 
                 Spacer()
 
-                Button("保存") { performSave() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                HStack(spacing: 8) {
+                    if let feedbackText {
+                        Text(feedbackText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(feedbackIsError ? .red : .goldGreen)
+                            .lineLimit(1)
+                    }
+
+                    Button("保存") { performSave() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
             }
         }
         .padding(14)
-        .frame(width: 320, alignment: .leading)
+        .frame(width: PositionDetailLayout.panelWidth, alignment: .leading)
     }
 
     // MARK: - Actions
@@ -808,7 +889,16 @@ private struct PositionEditorContent: View {
             showFeedback("请完善每笔买入的价格和克数", isError: true)
             return
         }
-        let pos = PositionInfo(lots: validLots, sourceRawValue: selectedSource.rawValue)
+        guard !hasInvalidFeeInput else {
+            showFeedback("手续费请输入大于等于 0 的数字", isError: true)
+            return
+        }
+        let pos = PositionInfo(
+            lots: validLots,
+            sourceRawValue: selectedSource.rawValue,
+            feeMode: feeMode,
+            feeValue: totalFeeValue
+        )
         PriceHistoryManager.shared.savePosition(pos)
         hasSavedPosition = true
         showFeedback("已保存", isError: false)
@@ -817,6 +907,8 @@ private struct PositionEditorContent: View {
     private func performClear() {
         PriceHistoryManager.shared.clearPosition()
         lotDrafts = [PositionLotDraft()]
+        feeMode = .perGram
+        feeText = ""
         showClearConfirm = false
         hasSavedPosition = false
         showFeedback("已清仓", isError: false)
@@ -835,10 +927,16 @@ private struct PositionEditorContent: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 metricChip(title: "总克数", value: totalGrams > 0 ? "\(String(format: "%.4f", totalGrams)) 克" : "--")
-                metricChip(title: "自动均价", value: totalGrams > 0 ? "\(String(format: "%.2f", weightedAveragePrice)) 元/克" : "--")
+                metricChip(title: "买入均价", value: totalGrams > 0 ? "\(String(format: "%.2f", weightedAveragePrice)) 元/克" : "--")
             }
 
-            Text("已录入 \(validLots.count) 笔有效买入，保存后将按加权均价计算收益。")
+            HStack(spacing: 10) {
+                metricChip(title: "手续费规则", value: feeRuleText)
+                metricChip(title: "预计手续费", value: "\(String(format: "%.2f", calculatedFeeAmount)) 元")
+                metricChip(title: "保本价", value: totalGrams > 0 ? "\(String(format: "%.2f", breakEvenPrice)) 元/克" : "--")
+            }
+
+            Text("已录入 \(validLots.count) 笔有效买入，保存后将按加权均价并根据手续费规则计算收益。")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
@@ -849,6 +947,50 @@ private struct PositionEditorContent: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
         )
+    }
+
+    private var feeInputSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("手续费规则")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            segmentedPicker(
+                items: PositionFeeMode.allCases,
+                selected: feeMode,
+                label: { $0.rawValue },
+                onSelect: { feeMode = $0 }
+            )
+
+            HStack(spacing: 8) {
+                PastableTextField(
+                    text: $feeText,
+                    placeholder: feeMode == .perGram ? "例如: 0.50" : "例如: 0.30"
+                )
+                    .frame(width: 120, height: 22)
+
+                Text(feeMode.inputUnit)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+
+                Text("留空按 0 处理")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            Text(hasInvalidFeeInput ? "请输入大于等于 0 的数字。" : feeHelperText)
+                .font(.system(size: 10))
+                .foregroundColor(hasInvalidFeeInput ? .red : .secondary)
+        }
+    }
+
+    private var feeHelperText: String {
+        switch feeMode {
+        case .perGram:
+            return "按总克数计算手续费，会计入总成本、收益和收益率。"
+        case .percentage:
+            return "按买入总额的百分比计算手续费，会计入总成本、收益和收益率。"
+        }
     }
 
     private func metricChip(title: String, value: String) -> some View {
@@ -863,15 +1005,18 @@ private struct PositionEditorContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func lotRow(draft: Binding<PositionLotDraft>) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+    private func lotRow(draft: Binding<PositionLotDraft>, index: Int) -> some View {
+        let lotMetrics = lotMetrics(for: draft.wrappedValue)
+
+        return HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("买入价 (元/克)")
+                Text("买入价")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 PastableTextField(text: draft.priceText, placeholder: "例如: 980.50")
                     .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("克数")
@@ -880,6 +1025,23 @@ private struct PositionEditorContent: View {
                 PastableTextField(text: draft.gramsText, placeholder: "例如: 10.0000")
                     .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
+
+            HStack(alignment: .top, spacing: 18) {
+                lotMetricField(
+                    title: "手续费",
+                    value: lotMetrics.feeText,
+                    valueColor: .secondary
+                )
+
+                lotMetricField(
+                    title: "收益",
+                    value: lotMetrics.profitText,
+                    valueColor: lotMetrics.profitColor
+                )
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.leading, 6)
 
             Button(action: {
                 removeLot(id: draft.wrappedValue.id)
@@ -892,6 +1054,7 @@ private struct PositionEditorContent: View {
             .padding(.top, 24)
             .disabled(lotDrafts.count <= 1)
         }
+        .padding(.leading, 12)
         .padding(10)
         .background(Color.primary.opacity(0.025))
         .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -899,6 +1062,61 @@ private struct PositionEditorContent: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.primary.opacity(0.05), lineWidth: 0.5)
         )
+        .overlay(alignment: .leading) {
+            lotIndexBadge(index + 1)
+                .offset(x: -10)
+        }
+    }
+
+    private func lotIndexBadge(_ number: Int) -> some View {
+        Text("\(number)")
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundColor(.accentColor)
+            .frame(width: 20, height: 20)
+            .background(Color.accentColor.opacity(0.12))
+            .clipShape(Circle())
+    }
+
+    private func lotMetrics(for draft: PositionLotDraft) -> (feeText: String, profitText: String, profitColor: Color) {
+        guard let price = Double(draft.priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let grams = Double(draft.gramsText.trimmingCharacters(in: .whitespacesAndNewlines)),
+              price > 0,
+              grams > 0 else {
+            return ("--", "--", .secondary)
+        }
+
+        let fee: Double
+        switch feeMode {
+        case .perGram:
+            fee = totalFeeValue * grams
+        case .percentage:
+            fee = price * grams * totalFeeValue / 100
+        }
+
+        guard let currentPrice = selectedSourceCurrentPrice else {
+            return ("\(String(format: "%.2f", fee))", "--", .secondary)
+        }
+
+        let profit = (currentPrice * grams) - (price * grams) - fee
+        let profitColor: Color = profit >= 0 ? .red : .goldGreen
+        let profitText = "\(profit >= 0 ? "+" : "")\(String(format: "%.2f", profit))"
+        return ("\(String(format: "%.2f", fee))", profitText, profitColor)
+    }
+
+    private func lotMetricField(title: String, value: String, valueColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundColor(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.88)
+                .frame(minHeight: 24, alignment: .leading)
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func removeLot(id: String) {
@@ -920,7 +1138,7 @@ class SettingsEditorView: EditableMenuItemView {
             currentSource: currentSource,
             onSourceChange: onSourceChange,
             onSave: onSave
-        )), minWidth: 280)
+        )), minWidth: 320)
     }
     required init?(coder: NSCoder) { fatalError() }
 }
@@ -932,7 +1150,7 @@ private struct SettingsEditorContent: View {
     @State private var dailyChangeDisplay: DailyChangeDisplayMode
     @State private var refreshIntervalSeconds: Int
     @State private var refreshIntervalText: String
-    @State private var selectedSource: GoldPriceSource
+    @State private var selectedStatusBarSources: [GoldPriceSource]
     @State private var defaultAlertRepeatInterval: AlertRepeatInterval
     @State private var saved = false
 
@@ -955,7 +1173,7 @@ private struct SettingsEditorContent: View {
         _dailyChangeDisplay = State(initialValue: s.dailyChangeDisplay)
         _refreshIntervalSeconds = State(initialValue: s.refreshInterval)
         _refreshIntervalText = State(initialValue: "\(s.refreshInterval)")
-        _selectedSource = State(initialValue: currentSource)
+        _selectedStatusBarSources = State(initialValue: s.statusBarSources.isEmpty ? [currentSource] : s.statusBarSources)
         _defaultAlertRepeatInterval = State(initialValue: s.defaultAlertRepeatInterval)
     }
 
@@ -973,21 +1191,23 @@ private struct SettingsEditorContent: View {
 
             HStack {
                 Spacer()
-                if saved {
-                    Text("已保存 ✓")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.goldGreen)
+                HStack(spacing: 8) {
+                    if saved {
+                        Text("已保存 ✓")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.goldGreen)
+                    }
+                    Button("保存") {
+                        saveSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
-                Button("保存") {
-                    saveSettings()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
             .padding(.top, 2)
         }
         .padding(14)
-        .frame(width: 280)
+        .frame(width: 320)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
@@ -998,49 +1218,13 @@ private struct SettingsEditorContent: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
 
+                Text("支持多选。已选顺序就是状态栏显示顺序，第一个会作为主展示源。")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(GoldPriceSource.allCases, id: \.self) { source in
-                        Button(action: {
-                            selectedSource = source
-                        }) {
-                            HStack(spacing: 8) {
-                                Text(source.isDomestic ? "国内" : "国际")
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundColor(selectedSource == source ? .accentColor : .secondary)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        selectedSource == source ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05)
-                                    )
-                                    .clipShape(Capsule())
-
-                                Text(source.rawValue)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.primary)
-
-                                Text(source.unit)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(.secondary)
-
-                                Spacer()
-
-                                Image(systemName: selectedSource == source ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(selectedSource == source ? .accentColor : .secondary)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(selectedSource == source ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 7)
-                                    .stroke(
-                                        selectedSource == source ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.06),
-                                        lineWidth: selectedSource == source ? 1 : 0.5
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
+                    ForEach(orderedStatusBarSources, id: \.self) { source in
+                        statusBarSourceRow(source)
                     }
                 }
             }
@@ -1180,6 +1364,7 @@ private struct SettingsEditorContent: View {
         syncRefreshIntervalInput()
         let settings = AppSettings(
             statusBarIcon: selectedIcon,
+            statusBarSourceRawValues: selectedStatusBarSources.map(\.rawValue),
             profitDisplay: profitDisplay,
             statusBarProfitUsesColor: statusBarProfitUsesColor,
             dailyChangeDisplay: dailyChangeDisplay,
@@ -1188,7 +1373,7 @@ private struct SettingsEditorContent: View {
         )
         PriceHistoryManager.shared.saveSettings(settings)
         syncExistingAlerts(with: settings)
-        onSourceChange(selectedSource)
+        onSourceChange(selectedStatusBarSources.first ?? .jdZsFinance)
         onSave()
         saved = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -1228,6 +1413,120 @@ private struct SettingsEditorContent: View {
         let parsed = Int(refreshIntervalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? refreshIntervalSeconds
         refreshIntervalSeconds = max(1, parsed)
         refreshIntervalText = "\(refreshIntervalSeconds)"
+    }
+
+    private var orderedStatusBarSources: [GoldPriceSource] {
+        selectedStatusBarSources + GoldPriceSource.allCases.filter { !selectedStatusBarSources.contains($0) }
+    }
+
+    @ViewBuilder
+    private func statusBarSourceRow(_ source: GoldPriceSource) -> some View {
+        let isSelected = selectedStatusBarSources.contains(source)
+        let selectedIndex = selectedStatusBarSources.firstIndex(of: source)
+
+        HStack(spacing: 8) {
+            Text(isSelected ? "\(selectedIndex.map { $0 + 1 } ?? 0)" : "•")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundColor(isSelected ? .accentColor : .secondary)
+                .frame(width: 18, height: 18)
+                .background(isSelected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(source.isDomestic ? "国内" : "国际")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            isSelected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05)
+                        )
+                        .clipShape(Capsule())
+
+                    Text(source.rawValue)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+
+                    Text(source.unit)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+
+                Text(isSelected ? "已显示在状态栏" : "未显示")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 4)
+
+            HStack(spacing: 4) {
+                Button(action: {
+                    moveStatusBarSource(source, offset: -1)
+                }) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(canMoveStatusBarSource(source, offset: -1) ? .primary : .secondary.opacity(0.35))
+                .disabled(!canMoveStatusBarSource(source, offset: -1))
+
+                Button(action: {
+                    moveStatusBarSource(source, offset: 1)
+                }) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(canMoveStatusBarSource(source, offset: 1) ? .primary : .secondary.opacity(0.35))
+                .disabled(!canMoveStatusBarSource(source, offset: 1))
+
+                Button(action: {
+                    toggleStatusBarSource(source)
+                }) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 13))
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(
+                    isSelected ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.06),
+                    lineWidth: isSelected ? 1 : 0.5
+                )
+        )
+    }
+
+    private func toggleStatusBarSource(_ source: GoldPriceSource) {
+        if let index = selectedStatusBarSources.firstIndex(of: source) {
+            guard selectedStatusBarSources.count > 1 else { return }
+            selectedStatusBarSources.remove(at: index)
+        } else {
+            selectedStatusBarSources.append(source)
+        }
+    }
+
+    private func canMoveStatusBarSource(_ source: GoldPriceSource, offset: Int) -> Bool {
+        guard let index = selectedStatusBarSources.firstIndex(of: source) else { return false }
+        let destination = index + offset
+        return destination >= 0 && destination < selectedStatusBarSources.count
+    }
+
+    private func moveStatusBarSource(_ source: GoldPriceSource, offset: Int) {
+        guard let index = selectedStatusBarSources.firstIndex(of: source) else { return }
+        let destination = index + offset
+        guard destination >= 0, destination < selectedStatusBarSources.count else { return }
+        selectedStatusBarSources.swapAt(index, destination)
     }
 }
 
@@ -1726,7 +2025,7 @@ private struct ProfitAlertEditorContent: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
 
-                    Text("收益提醒依赖持仓克数、买入均价和收益计算相对数据源。")
+                    Text("收益提醒依赖持仓克数、买入均价、手续费和收益计算相对数据源。")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }

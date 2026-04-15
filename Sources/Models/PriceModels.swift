@@ -207,8 +207,12 @@ enum ExtremeAlertCooldown: Int, Codable, CaseIterable {
 }
 
 struct AppSettings: Codable, Equatable {
+    static let defaultStatusBarSourceRawValues = [GoldPriceSource.jdZsFinance.rawValue]
+
     enum CodingKeys: String, CodingKey {
         case statusBarIcon
+        case statusBarSourceRawValues
+        case statusBarSourceRawValue
         case profitDisplay
         case statusBarProfitUsesColor
         case dailyChangeDisplay
@@ -218,6 +222,7 @@ struct AppSettings: Codable, Equatable {
     }
 
     var statusBarIcon: String = "🌕"
+    var statusBarSourceRawValues: [String] = AppSettings.defaultStatusBarSourceRawValues
     var profitDisplay: ProfitDisplayMode = .off
     var statusBarProfitUsesColor: Bool = true
     var dailyChangeDisplay: DailyChangeDisplayMode = .off
@@ -227,6 +232,7 @@ struct AppSettings: Codable, Equatable {
 
     init(
         statusBarIcon: String = "🌕",
+        statusBarSourceRawValues: [String] = AppSettings.defaultStatusBarSourceRawValues,
         profitDisplay: ProfitDisplayMode = .off,
         statusBarProfitUsesColor: Bool = true,
         dailyChangeDisplay: DailyChangeDisplayMode = .off,
@@ -235,12 +241,26 @@ struct AppSettings: Codable, Equatable {
         extremeAlertCooldown: ExtremeAlertCooldown = .threeMinutes
     ) {
         self.statusBarIcon = statusBarIcon
+        self.statusBarSourceRawValues = AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues)
         self.profitDisplay = profitDisplay
         self.statusBarProfitUsesColor = statusBarProfitUsesColor
         self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
         self.defaultAlertRepeatInterval = defaultAlertRepeatInterval
         self.extremeAlertCooldown = extremeAlertCooldown
+    }
+
+    var statusBarSources: [GoldPriceSource] {
+        get {
+            AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues).compactMap(GoldPriceSource.init(rawValue:))
+        }
+        set {
+            statusBarSourceRawValues = AppSettings.normalizedStatusBarSources(newValue).map(\.rawValue)
+        }
+    }
+
+    var primaryStatusBarSource: GoldPriceSource {
+        statusBarSources.first ?? .jdZsFinance
     }
 
     var refreshTimeInterval: TimeInterval {
@@ -250,6 +270,13 @@ struct AppSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         statusBarIcon = try container.decodeIfPresent(String.self, forKey: .statusBarIcon) ?? "🌕"
+        if let storedRawValues = try container.decodeIfPresent([String].self, forKey: .statusBarSourceRawValues) {
+            statusBarSourceRawValues = AppSettings.normalizedStatusBarSourceRawValues(storedRawValues)
+        } else if let storedRawValue = try container.decodeIfPresent(String.self, forKey: .statusBarSourceRawValue) {
+            statusBarSourceRawValues = AppSettings.normalizedStatusBarSourceRawValues([storedRawValue])
+        } else {
+            statusBarSourceRawValues = AppSettings.defaultStatusBarSourceRawValues
+        }
         profitDisplay = try container.decodeIfPresent(ProfitDisplayMode.self, forKey: .profitDisplay) ?? .off
         statusBarProfitUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarProfitUsesColor) ?? true
         dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
@@ -261,12 +288,25 @@ struct AppSettings: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(statusBarIcon, forKey: .statusBarIcon)
+        try container.encode(AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues), forKey: .statusBarSourceRawValues)
         try container.encode(profitDisplay, forKey: .profitDisplay)
         try container.encode(statusBarProfitUsesColor, forKey: .statusBarProfitUsesColor)
         try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(defaultAlertRepeatInterval, forKey: .defaultAlertRepeatInterval)
         try container.encode(extremeAlertCooldown, forKey: .extremeAlertCooldown)
+    }
+
+    private static func normalizedStatusBarSources(_ sources: [GoldPriceSource]) -> [GoldPriceSource] {
+        var normalized: [GoldPriceSource] = []
+        for source in sources where !normalized.contains(source) {
+            normalized.append(source)
+        }
+        return normalized.isEmpty ? [.jdZsFinance] : normalized
+    }
+
+    private static func normalizedStatusBarSourceRawValues(_ rawValues: [String]) -> [String] {
+        normalizedStatusBarSources(rawValues.compactMap(GoldPriceSource.init(rawValue:))).map(\.rawValue)
     }
 }
 
@@ -654,12 +694,29 @@ struct ExtremePriceAlertConfig: Codable, Equatable {
     }
 }
 
+enum PositionFeeMode: String, Codable, CaseIterable {
+    case perGram = "每克固定"
+    case percentage = "百分比"
+
+    var inputUnit: String {
+        switch self {
+        case .perGram:
+            return "元/克"
+        case .percentage:
+            return "%"
+        }
+    }
+}
+
 struct PositionInfo: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case lots
         case grams
         case avgPrice
         case sourceRawValue
+        case feeModeRawValue
+        case feeValue
+        case totalFee
     }
 
     struct Lot: Codable, Equatable, Identifiable {
@@ -676,24 +733,57 @@ struct PositionInfo: Codable, Equatable {
 
     var lots: [Lot]
     var sourceRawValue: String
+    var feeModeRawValue: String
+    var feeValue: Double
 
-    init(lots: [Lot], sourceRawValue: String) {
+    init(
+        lots: [Lot],
+        sourceRawValue: String,
+        feeMode: PositionFeeMode = .perGram,
+        feeValue: Double = 0
+    ) {
         self.lots = lots.filter { $0.grams > 0 && $0.price > 0 }
         self.sourceRawValue = sourceRawValue
+        self.feeModeRawValue = feeMode.rawValue
+        self.feeValue = max(0, feeValue)
     }
 
-    init(grams: Double, avgPrice: Double, sourceRawValue: String) {
-        self.init(lots: [Lot(grams: grams, price: avgPrice)], sourceRawValue: sourceRawValue)
+    init(
+        grams: Double,
+        avgPrice: Double,
+        sourceRawValue: String,
+        feeMode: PositionFeeMode = .perGram,
+        feeValue: Double = 0
+    ) {
+        self.init(
+            lots: [Lot(grams: grams, price: avgPrice)],
+            sourceRawValue: sourceRawValue,
+            feeMode: feeMode,
+            feeValue: feeValue
+        )
     }
 
     var grams: Double {
         lots.reduce(0) { $0 + $1.grams }
     }
 
+    var purchaseCost: Double {
+        lots.reduce(0) { $0 + ($1.grams * $1.price) }
+    }
+
+    var totalCost: Double {
+        purchaseCost + totalFee
+    }
+
     var avgPrice: Double {
         let totalGrams = grams
         guard totalGrams > 0 else { return 0 }
-        let totalCost = lots.reduce(0) { $0 + ($1.grams * $1.price) }
+        return purchaseCost / totalGrams
+    }
+
+    var breakEvenPrice: Double {
+        let totalGrams = grams
+        guard totalGrams > 0 else { return 0 }
         return totalCost / totalGrams
     }
 
@@ -701,13 +791,26 @@ struct PositionInfo: Codable, Equatable {
         GoldPriceSource(rawValue: sourceRawValue)
     }
 
+    var feeMode: PositionFeeMode {
+        PositionFeeMode(rawValue: feeModeRawValue) ?? .perGram
+    }
+
+    var totalFee: Double {
+        switch feeMode {
+        case .perGram:
+            return max(0, feeValue) * grams
+        case .percentage:
+            return purchaseCost * max(0, feeValue) / 100
+        }
+    }
+
     func profit(currentPrice: Double) -> Double {
-        (currentPrice - avgPrice) * grams
+        (currentPrice * grams) - totalCost
     }
 
     func profitRate(currentPrice: Double) -> Double {
-        guard avgPrice > 0 else { return 0 }
-        return (currentPrice - avgPrice) / avgPrice * 100
+        guard totalCost > 0 else { return 0 }
+        return profit(currentPrice: currentPrice) / totalCost * 100
     }
 
     init(from decoder: Decoder) throws {
@@ -721,6 +824,20 @@ struct PositionInfo: Codable, Equatable {
             let legacyAvgPrice = try container.decode(Double.self, forKey: .avgPrice)
             lots = [Lot(grams: legacyGrams, price: legacyAvgPrice)].filter { $0.grams > 0 && $0.price > 0 }
         }
+
+        if let decodedFeeMode = try container.decodeIfPresent(String.self, forKey: .feeModeRawValue),
+           let feeMode = PositionFeeMode(rawValue: decodedFeeMode) {
+            feeModeRawValue = feeMode.rawValue
+            feeValue = max(0, try container.decodeIfPresent(Double.self, forKey: .feeValue) ?? 0)
+        } else if let decodedFeeValue = try container.decodeIfPresent(Double.self, forKey: .feeValue) {
+            feeModeRawValue = PositionFeeMode.perGram.rawValue
+            feeValue = max(0, decodedFeeValue)
+        } else {
+            let legacyTotalFee = max(0, try container.decodeIfPresent(Double.self, forKey: .totalFee) ?? 0)
+            let totalGrams = lots.reduce(0) { $0 + $1.grams }
+            feeModeRawValue = PositionFeeMode.perGram.rawValue
+            feeValue = totalGrams > 0 ? legacyTotalFee / totalGrams : 0
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -729,5 +846,8 @@ struct PositionInfo: Codable, Equatable {
         try container.encode(grams, forKey: .grams)
         try container.encode(avgPrice, forKey: .avgPrice)
         try container.encode(sourceRawValue, forKey: .sourceRawValue)
+        try container.encode(feeMode.rawValue, forKey: .feeModeRawValue)
+        try container.encode(max(0, feeValue), forKey: .feeValue)
+        try container.encode(totalFee, forKey: .totalFee)
     }
 }

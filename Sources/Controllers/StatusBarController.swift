@@ -246,6 +246,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         super.init()
 
+        dataService.setDataSource(historyManager.settings.primaryStatusBarSource)
+
         pendingPriceAlertStateNormalization = Set(historyManager.alerts.map(\.id))
         pendingPercentageAlertStateNormalization = Set(historyManager.percentageAlerts.map(\.id))
 
@@ -304,56 +306,40 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func updateStatusBarDisplay() {
         guard let button = statusItem.button else { return }
 
-        let icon = historyManager.settings.statusBarIcon
+        let settings = historyManager.settings
+        let icon = settings.statusBarIcon
         let prefix = icon.isEmpty ? "" : "\(icon) "
-
-        let source = dataService.currentSource
-        guard let info = dataService.allSourcePrices[source], info.price != "--" else {
-            button.attributedTitle = NSAttributedString(string: "\(prefix)--")
-            return
-        }
+        let displaySources = settings.statusBarSources
+        let primarySource = displaySources.first ?? dataService.currentSource
 
         let defaultAttributes: [NSAttributedString.Key: Any] = [
             .font: button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
             .foregroundColor: NSColor.labelColor
         ]
-        let attributedTitle = NSMutableAttributedString(
-            string: "\(prefix)\(info.formattedPrice)",
-            attributes: defaultAttributes
-        )
 
-        let dailyChangeMode = historyManager.settings.dailyChangeDisplay
-        if dailyChangeMode != .off {
-            let changeAmount = info.changeAmount.trimmingCharacters(in: .whitespacesAndNewlines)
-            let changeRate = info.changeRate.trimmingCharacters(in: .whitespacesAndNewlines)
-            let dailyChangeText: String?
-
-            switch dailyChangeMode {
-            case .off:
-                dailyChangeText = nil
-            case .amount:
-                dailyChangeText = changeAmount.isEmpty ? nil : changeAmount
-            case .rate:
-                dailyChangeText = changeRate.isEmpty ? nil : changeRate
-            case .both:
-                if !changeAmount.isEmpty && !changeRate.isEmpty {
-                    dailyChangeText = "\(changeAmount) (\(changeRate))"
-                } else if !changeAmount.isEmpty {
-                    dailyChangeText = changeAmount
-                } else if !changeRate.isEmpty {
-                    dailyChangeText = changeRate
-                } else {
-                    dailyChangeText = nil
-                }
-            }
-
-            if let dailyChangeText {
-                attributedTitle.append(NSAttributedString(string: "  \(dailyChangeText)", attributes: defaultAttributes))
-            }
+        let attributedTitle = NSMutableAttributedString()
+        if !prefix.isEmpty {
+            attributedTitle.append(NSAttributedString(string: prefix, attributes: defaultAttributes))
         }
 
-        let profitMode = historyManager.settings.profitDisplay
-        let profitUsesColor = historyManager.settings.statusBarProfitUsesColor
+        let sourceTexts = displaySources.map { source in
+            statusBarSourceText(
+                for: source,
+                info: dataService.allSourcePrices[source]
+            )
+        }
+        attributedTitle.append(NSAttributedString(
+            string: sourceTexts.isEmpty ? "--" : sourceTexts.joined(separator: "  "),
+            attributes: defaultAttributes
+        ))
+
+        if let primaryInfo = dataService.allSourcePrices[primarySource],
+           let dailyChangeText = statusBarDailyChangeText(for: primaryInfo, mode: settings.dailyChangeDisplay) {
+            attributedTitle.append(NSAttributedString(string: "  \(dailyChangeText)", attributes: defaultAttributes))
+        }
+
+        let profitMode = settings.profitDisplay
+        let profitUsesColor = settings.statusBarProfitUsesColor
         if profitMode != .off,
            let pos = historyManager.position,
            let posSource = pos.source,
@@ -401,6 +387,41 @@ class StatusBarController: NSObject, NSMenuDelegate {
         checkPercentageAlerts()
         checkProfitAlerts()
         checkExtremePriceAlerts()
+    }
+
+    private func statusBarSourceText(
+        for source: GoldPriceSource,
+        info: PriceInfo?
+    ) -> String {
+        if let info, info.price != "--" {
+            return info.formattedPrice
+        }
+        return "--"
+    }
+
+    private func statusBarDailyChangeText(for info: PriceInfo, mode: DailyChangeDisplayMode) -> String? {
+        let changeAmount = info.changeAmount.trimmingCharacters(in: .whitespacesAndNewlines)
+        let changeRate = info.changeRate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch mode {
+        case .off:
+            return nil
+        case .amount:
+            return changeAmount.isEmpty ? nil : changeAmount
+        case .rate:
+            return changeRate.isEmpty ? nil : changeRate
+        case .both:
+            if !changeAmount.isEmpty && !changeRate.isEmpty {
+                return "\(changeAmount) (\(changeRate))"
+            }
+            if !changeAmount.isEmpty {
+                return changeAmount
+            }
+            if !changeRate.isEmpty {
+                return changeRate
+            }
+            return nil
+        }
     }
 
     private func statusBarHighlightAttributes(base: [NSAttributedString.Key: Any], isPositive: Bool) -> [NSAttributedString.Key: Any] {
@@ -853,7 +874,11 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func makePositionDetailView() -> NSView {
-        let view = PositionDetailPanelView(position: historyManager.position, allSources: GoldPriceSource.domesticSources)
+        let view = PositionDetailPanelView(
+            position: historyManager.position,
+            allSources: GoldPriceSource.domesticSources,
+            sourcePrices: dataService.allSourcePrices
+        )
 
         if let position = historyManager.position,
            let source = position.source,
@@ -1454,7 +1479,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         let editorView = PositionEditorView(
             position: historyManager.position,
-            allSources: GoldPriceSource.domesticSources
+            allSources: GoldPriceSource.domesticSources,
+            sourcePrices: dataService.allSourcePrices
         )
         let editorItem = NSMenuItem()
         editorItem.view = editorView
