@@ -322,20 +322,22 @@ class StatusBarController: NSObject, NSMenuDelegate {
             attributedTitle.append(NSAttributedString(string: prefix, attributes: defaultAttributes))
         }
 
-        let sourceTexts = displaySources.map { source in
-            statusBarSourceText(
-                for: source,
-                info: dataService.allSourcePrices[source]
-            )
-        }
-        attributedTitle.append(NSAttributedString(
-            string: sourceTexts.isEmpty ? "--" : sourceTexts.joined(separator: "  "),
-            attributes: defaultAttributes
-        ))
+        appendStatusBarSourceTexts(
+            to: attributedTitle,
+            sources: displaySources,
+            defaultAttributes: defaultAttributes,
+            usesDailyChangeColor: settings.statusBarPriceUsesDailyChangeColor
+        )
 
         if let primaryInfo = dataService.allSourcePrices[primarySource],
            let dailyChangeText = statusBarDailyChangeText(for: primaryInfo, mode: settings.dailyChangeDisplay) {
-            attributedTitle.append(NSAttributedString(string: "  \(dailyChangeText)", attributes: defaultAttributes))
+            attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
+            attributedTitle.append(NSAttributedString(
+                string: dailyChangeText,
+                attributes: settings.statusBarDailyChangeUsesColor
+                    ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: primaryInfo.isUp)
+                    : defaultAttributes
+            ))
         }
 
         let profitMode = settings.profitDisplay
@@ -397,6 +399,35 @@ class StatusBarController: NSObject, NSMenuDelegate {
             return info.formattedPrice
         }
         return "--"
+    }
+
+    private func appendStatusBarSourceTexts(
+        to attributedTitle: NSMutableAttributedString,
+        sources: [GoldPriceSource],
+        defaultAttributes: [NSAttributedString.Key: Any],
+        usesDailyChangeColor: Bool
+    ) {
+        guard !sources.isEmpty else {
+            attributedTitle.append(NSAttributedString(string: "--", attributes: defaultAttributes))
+            return
+        }
+
+        for (index, source) in sources.enumerated() {
+            if index > 0 {
+                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
+            }
+
+            let info = dataService.allSourcePrices[source]
+            let text = statusBarSourceText(for: source, info: info)
+            let attributes: [NSAttributedString.Key: Any]
+            if usesDailyChangeColor, let info, info.price != "--" {
+                attributes = statusBarHighlightAttributes(base: defaultAttributes, isPositive: info.isUp)
+            } else {
+                attributes = defaultAttributes
+            }
+
+            attributedTitle.append(NSAttributedString(string: text, attributes: attributes))
+        }
     }
 
     private func statusBarDailyChangeText(for info: PriceInfo, mode: DailyChangeDisplayMode) -> String? {

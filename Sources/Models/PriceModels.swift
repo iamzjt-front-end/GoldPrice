@@ -273,6 +273,8 @@ struct AppSettings: Codable, Equatable {
         case statusBarSourceRawValues
         case statusBarSourceRawValue
         case profitDisplay
+        case statusBarPriceUsesDailyChangeColor
+        case statusBarDailyChangeUsesColor
         case statusBarProfitUsesColor
         case dailyChangeDisplay
         case refreshInterval
@@ -287,6 +289,8 @@ struct AppSettings: Codable, Equatable {
     var statusBarIcon: String = "🌕"
     var statusBarSourceRawValues: [String] = AppSettings.defaultStatusBarSourceRawValues
     var profitDisplay: ProfitDisplayMode = .off
+    var statusBarPriceUsesDailyChangeColor: Bool = false
+    var statusBarDailyChangeUsesColor: Bool = true
     var statusBarProfitUsesColor: Bool = true
     var dailyChangeDisplay: DailyChangeDisplayMode = .off
     var refreshInterval: Int = 5
@@ -301,6 +305,8 @@ struct AppSettings: Codable, Equatable {
         statusBarIcon: String = "🌕",
         statusBarSourceRawValues: [String] = AppSettings.defaultStatusBarSourceRawValues,
         profitDisplay: ProfitDisplayMode = .off,
+        statusBarPriceUsesDailyChangeColor: Bool = false,
+        statusBarDailyChangeUsesColor: Bool = true,
         statusBarProfitUsesColor: Bool = true,
         dailyChangeDisplay: DailyChangeDisplayMode = .off,
         refreshInterval: Int = 5,
@@ -314,6 +320,8 @@ struct AppSettings: Codable, Equatable {
         self.statusBarIcon = statusBarIcon
         self.statusBarSourceRawValues = AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues)
         self.profitDisplay = profitDisplay
+        self.statusBarPriceUsesDailyChangeColor = statusBarPriceUsesDailyChangeColor
+        self.statusBarDailyChangeUsesColor = statusBarDailyChangeUsesColor
         self.statusBarProfitUsesColor = statusBarProfitUsesColor
         self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
@@ -375,6 +383,8 @@ struct AppSettings: Codable, Equatable {
             statusBarSourceRawValues = AppSettings.defaultStatusBarSourceRawValues
         }
         profitDisplay = try container.decodeIfPresent(ProfitDisplayMode.self, forKey: .profitDisplay) ?? .off
+        statusBarPriceUsesDailyChangeColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarPriceUsesDailyChangeColor) ?? false
+        statusBarDailyChangeUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarDailyChangeUsesColor) ?? true
         statusBarProfitUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarProfitUsesColor) ?? true
         dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
@@ -397,6 +407,8 @@ struct AppSettings: Codable, Equatable {
         try container.encode(statusBarIcon, forKey: .statusBarIcon)
         try container.encode(AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues), forKey: .statusBarSourceRawValues)
         try container.encode(profitDisplay, forKey: .profitDisplay)
+        try container.encode(statusBarPriceUsesDailyChangeColor, forKey: .statusBarPriceUsesDailyChangeColor)
+        try container.encode(statusBarDailyChangeUsesColor, forKey: .statusBarDailyChangeUsesColor)
         try container.encode(statusBarProfitUsesColor, forKey: .statusBarProfitUsesColor)
         try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)

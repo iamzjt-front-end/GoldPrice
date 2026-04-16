@@ -1146,6 +1146,8 @@ class SettingsEditorView: EditableMenuItemView {
 private struct SettingsEditorContent: View {
     @State private var selectedIcon: String
     @State private var profitDisplay: ProfitDisplayMode
+    @State private var statusBarPriceUsesDailyChangeColor: Bool
+    @State private var statusBarDailyChangeUsesColor: Bool
     @State private var statusBarProfitUsesColor: Bool
     @State private var dailyChangeDisplay: DailyChangeDisplayMode
     @State private var refreshIntervalSeconds: Int
@@ -1169,6 +1171,8 @@ private struct SettingsEditorContent: View {
         let s = PriceHistoryManager.shared.settings
         _selectedIcon = State(initialValue: s.statusBarIcon)
         _profitDisplay = State(initialValue: s.profitDisplay)
+        _statusBarPriceUsesDailyChangeColor = State(initialValue: s.statusBarPriceUsesDailyChangeColor)
+        _statusBarDailyChangeUsesColor = State(initialValue: s.statusBarDailyChangeUsesColor)
         _statusBarProfitUsesColor = State(initialValue: s.statusBarProfitUsesColor)
         _dailyChangeDisplay = State(initialValue: s.dailyChangeDisplay)
         _refreshIntervalSeconds = State(initialValue: s.refreshInterval)
@@ -1275,6 +1279,9 @@ private struct SettingsEditorContent: View {
                         dailyChangeDisplay = $0
                     }
                 )
+
+                settingsToggleRow(title: "当日金价涨跌幅颜色", isOn: $statusBarPriceUsesDailyChangeColor)
+                settingsToggleRow(title: "当日涨跌幅颜色", isOn: $statusBarDailyChangeUsesColor)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1297,27 +1304,7 @@ private struct SettingsEditorContent: View {
                     }
                 )
 
-                HStack(spacing: 10) {
-                    Text("状态栏收益颜色")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-
-                    Spacer(minLength: 0)
-
-                    Toggle("", isOn: $statusBarProfitUsesColor)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color.primary.opacity(0.03))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
-                )
-                .padding(.top, 2)
+                settingsToggleRow(title: "状态栏收益颜色", isOn: $statusBarProfitUsesColor)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1366,6 +1353,8 @@ private struct SettingsEditorContent: View {
             statusBarIcon: selectedIcon,
             statusBarSourceRawValues: selectedStatusBarSources.map(\.rawValue),
             profitDisplay: profitDisplay,
+            statusBarPriceUsesDailyChangeColor: statusBarPriceUsesDailyChangeColor,
+            statusBarDailyChangeUsesColor: statusBarDailyChangeUsesColor,
             statusBarProfitUsesColor: statusBarProfitUsesColor,
             dailyChangeDisplay: dailyChangeDisplay,
             refreshInterval: refreshIntervalSeconds,
@@ -1417,6 +1406,30 @@ private struct SettingsEditorContent: View {
 
     private var orderedStatusBarSources: [GoldPriceSource] {
         selectedStatusBarSources + GoldPriceSource.allCases.filter { !selectedStatusBarSources.contains($0) }
+    }
+
+    private func settingsToggleRow(title: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Spacer(minLength: 0)
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
+        .padding(.top, 2)
     }
 
     @ViewBuilder
