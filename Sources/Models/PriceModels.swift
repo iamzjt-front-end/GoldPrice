@@ -31,6 +31,19 @@ enum GoldPriceSource: String, CaseIterable {
     static var internationalSources: [GoldPriceSource] {
         allCases.filter { !$0.isDomestic }
     }
+
+    var shortLabel: String {
+        switch self {
+        case .jdZsFinance:
+            return "浙商"
+        case .jdMsFinance:
+            return "民生"
+        case .londonGold:
+            return "伦敦"
+        case .newyorkGold:
+            return "纽约"
+        }
+    }
 }
 
 // MARK: - Price Info
@@ -188,6 +201,47 @@ enum DailyChangeDisplayMode: String, Codable, CaseIterable {
     case both = "都显示"
 }
 
+enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
+    case jdZsFinance
+    case londonGold
+    case profit
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .jdZsFinance:
+            return GoldPriceSource.jdZsFinance.rawValue
+        case .londonGold:
+            return GoldPriceSource.londonGold.rawValue
+        case .profit:
+            return "收益"
+        }
+    }
+
+    var source: GoldPriceSource? {
+        switch self {
+        case .jdZsFinance:
+            return .jdZsFinance
+        case .londonGold:
+            return .londonGold
+        case .profit:
+            return nil
+        }
+    }
+
+    static func item(for source: GoldPriceSource) -> DynamicIslandDisplayItem? {
+        switch source {
+        case .jdZsFinance:
+            return .jdZsFinance
+        case .londonGold:
+            return .londonGold
+        case .jdMsFinance, .newyorkGold:
+            return nil
+        }
+    }
+}
+
 enum ExtremeAlertCooldown: Int, Codable, CaseIterable {
     case oneMinute = 60
     case threeMinutes = 180
@@ -208,6 +262,11 @@ enum ExtremeAlertCooldown: Int, Codable, CaseIterable {
 
 struct AppSettings: Codable, Equatable {
     static let defaultStatusBarSourceRawValues = [GoldPriceSource.jdZsFinance.rawValue]
+    static let defaultDynamicIslandItemRawValues = [
+        DynamicIslandDisplayItem.jdZsFinance.rawValue,
+        DynamicIslandDisplayItem.londonGold.rawValue,
+        DynamicIslandDisplayItem.profit.rawValue
+    ]
 
     enum CodingKeys: String, CodingKey {
         case statusBarIcon
@@ -217,6 +276,10 @@ struct AppSettings: Codable, Equatable {
         case statusBarProfitUsesColor
         case dailyChangeDisplay
         case refreshInterval
+        case dynamicIslandEnabled
+        case dynamicIslandSourceRawValue
+        case dynamicIslandItemRawValues
+        case dynamicIslandRefreshInterval
         case defaultAlertRepeatInterval
         case extremeAlertCooldown
     }
@@ -227,6 +290,10 @@ struct AppSettings: Codable, Equatable {
     var statusBarProfitUsesColor: Bool = true
     var dailyChangeDisplay: DailyChangeDisplayMode = .off
     var refreshInterval: Int = 5
+    var dynamicIslandEnabled: Bool = false
+    var dynamicIslandSourceRawValue: String = GoldPriceSource.jdZsFinance.rawValue
+    var dynamicIslandItemRawValues: [String] = AppSettings.defaultDynamicIslandItemRawValues
+    var dynamicIslandRefreshInterval: Int = 15
     var defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes
     var extremeAlertCooldown: ExtremeAlertCooldown = .threeMinutes
 
@@ -237,6 +304,10 @@ struct AppSettings: Codable, Equatable {
         statusBarProfitUsesColor: Bool = true,
         dailyChangeDisplay: DailyChangeDisplayMode = .off,
         refreshInterval: Int = 5,
+        dynamicIslandEnabled: Bool = false,
+        dynamicIslandSourceRawValue: String = GoldPriceSource.jdZsFinance.rawValue,
+        dynamicIslandItemRawValues: [String] = AppSettings.defaultDynamicIslandItemRawValues,
+        dynamicIslandRefreshInterval: Int = 15,
         defaultAlertRepeatInterval: AlertRepeatInterval = .fiveMinutes,
         extremeAlertCooldown: ExtremeAlertCooldown = .threeMinutes
     ) {
@@ -246,6 +317,10 @@ struct AppSettings: Codable, Equatable {
         self.statusBarProfitUsesColor = statusBarProfitUsesColor
         self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
+        self.dynamicIslandEnabled = dynamicIslandEnabled
+        self.dynamicIslandSourceRawValue = AppSettings.normalizedSingleSourceRawValue(dynamicIslandSourceRawValue)
+        self.dynamicIslandItemRawValues = AppSettings.normalizedDynamicIslandItemRawValues(dynamicIslandItemRawValues)
+        self.dynamicIslandRefreshInterval = max(5, dynamicIslandRefreshInterval)
         self.defaultAlertRepeatInterval = defaultAlertRepeatInterval
         self.extremeAlertCooldown = extremeAlertCooldown
     }
@@ -267,6 +342,28 @@ struct AppSettings: Codable, Equatable {
         TimeInterval(max(1, refreshInterval))
     }
 
+    var dynamicIslandSource: GoldPriceSource {
+        get {
+            GoldPriceSource(rawValue: AppSettings.normalizedSingleSourceRawValue(dynamicIslandSourceRawValue)) ?? .jdZsFinance
+        }
+        set {
+            dynamicIslandSourceRawValue = newValue.rawValue
+        }
+    }
+
+    var dynamicIslandItems: [DynamicIslandDisplayItem] {
+        get {
+            AppSettings.normalizedDynamicIslandItemRawValues(dynamicIslandItemRawValues).compactMap(DynamicIslandDisplayItem.init(rawValue:))
+        }
+        set {
+            dynamicIslandItemRawValues = AppSettings.normalizedDynamicIslandItems(newValue).map(\.rawValue)
+        }
+    }
+
+    var dynamicIslandRefreshTimeInterval: TimeInterval {
+        TimeInterval(max(5, dynamicIslandRefreshInterval))
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         statusBarIcon = try container.decodeIfPresent(String.self, forKey: .statusBarIcon) ?? "🌕"
@@ -281,6 +378,16 @@ struct AppSettings: Codable, Equatable {
         statusBarProfitUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarProfitUsesColor) ?? true
         dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
+        dynamicIslandEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicIslandEnabled) ?? false
+        dynamicIslandSourceRawValue = AppSettings.normalizedSingleSourceRawValue(
+            try container.decodeIfPresent(String.self, forKey: .dynamicIslandSourceRawValue) ?? GoldPriceSource.jdZsFinance.rawValue
+        )
+        if let dynamicIslandRawValues = try container.decodeIfPresent([String].self, forKey: .dynamicIslandItemRawValues) {
+            dynamicIslandItemRawValues = AppSettings.normalizedDynamicIslandItemRawValues(dynamicIslandRawValues)
+        } else {
+            dynamicIslandItemRawValues = AppSettings.defaultDynamicIslandItemRawValues
+        }
+        dynamicIslandRefreshInterval = max(5, try container.decodeIfPresent(Int.self, forKey: .dynamicIslandRefreshInterval) ?? 15)
         defaultAlertRepeatInterval = try container.decodeIfPresent(AlertRepeatInterval.self, forKey: .defaultAlertRepeatInterval) ?? .fiveMinutes
         extremeAlertCooldown = try container.decodeIfPresent(ExtremeAlertCooldown.self, forKey: .extremeAlertCooldown) ?? .threeMinutes
     }
@@ -293,6 +400,10 @@ struct AppSettings: Codable, Equatable {
         try container.encode(statusBarProfitUsesColor, forKey: .statusBarProfitUsesColor)
         try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
+        try container.encode(dynamicIslandEnabled, forKey: .dynamicIslandEnabled)
+        try container.encode(AppSettings.normalizedSingleSourceRawValue(dynamicIslandSourceRawValue), forKey: .dynamicIslandSourceRawValue)
+        try container.encode(AppSettings.normalizedDynamicIslandItemRawValues(dynamicIslandItemRawValues), forKey: .dynamicIslandItemRawValues)
+        try container.encode(max(5, dynamicIslandRefreshInterval), forKey: .dynamicIslandRefreshInterval)
         try container.encode(defaultAlertRepeatInterval, forKey: .defaultAlertRepeatInterval)
         try container.encode(extremeAlertCooldown, forKey: .extremeAlertCooldown)
     }
@@ -307,6 +418,22 @@ struct AppSettings: Codable, Equatable {
 
     private static func normalizedStatusBarSourceRawValues(_ rawValues: [String]) -> [String] {
         normalizedStatusBarSources(rawValues.compactMap(GoldPriceSource.init(rawValue:))).map(\.rawValue)
+    }
+
+    private static func normalizedSingleSourceRawValue(_ rawValue: String) -> String {
+        GoldPriceSource(rawValue: rawValue)?.rawValue ?? GoldPriceSource.jdZsFinance.rawValue
+    }
+
+    private static func normalizedDynamicIslandItems(_ items: [DynamicIslandDisplayItem]) -> [DynamicIslandDisplayItem] {
+        var normalized: [DynamicIslandDisplayItem] = []
+        for item in items where !normalized.contains(item) {
+            normalized.append(item)
+        }
+        return normalized.isEmpty ? DynamicIslandDisplayItem.allCases : normalized
+    }
+
+    private static func normalizedDynamicIslandItemRawValues(_ rawValues: [String]) -> [String] {
+        normalizedDynamicIslandItems(rawValues.compactMap(DynamicIslandDisplayItem.init(rawValue:))).map(\.rawValue)
     }
 }
 
@@ -705,6 +832,215 @@ enum PositionFeeMode: String, Codable, CaseIterable {
         case .percentage:
             return "%"
         }
+    }
+}
+
+enum PositionTransactionType: String, Codable, CaseIterable, Identifiable {
+    case buy = "加仓"
+    case sell = "减仓"
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .buy: return "plus.circle.fill"
+        case .sell: return "minus.circle.fill"
+        }
+    }
+
+    var tintedColorName: String {
+        switch self {
+        case .buy: return "red"
+        case .sell: return "green"
+        }
+    }
+}
+
+struct PositionTransaction: Codable, Equatable, Identifiable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case date
+        case sourceRawValue
+        case typeRawValue
+        case grams
+        case price
+        case fee
+        case note
+    }
+
+    var id: String = UUID().uuidString
+    var date: Date
+    var sourceRawValue: String
+    var typeRawValue: String
+    var grams: Double
+    var price: Double
+    var fee: Double
+    var note: String
+
+    init(
+        id: String = UUID().uuidString,
+        date: Date = Date(),
+        sourceRawValue: String,
+        type: PositionTransactionType,
+        grams: Double,
+        price: Double,
+        fee: Double = 0,
+        note: String = ""
+    ) {
+        self.id = id
+        self.date = date
+        self.sourceRawValue = sourceRawValue
+        self.typeRawValue = type.rawValue
+        self.grams = max(0, grams)
+        self.price = max(0, price)
+        self.fee = max(0, fee)
+        self.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var source: GoldPriceSource? {
+        GoldPriceSource(rawValue: sourceRawValue)
+    }
+
+    var type: PositionTransactionType {
+        PositionTransactionType(rawValue: typeRawValue) ?? .buy
+    }
+
+    var grossAmount: Double {
+        grams * price
+    }
+}
+
+struct PositionPerformance: Equatable {
+    let source: GoldPriceSource
+    let currentGrams: Double
+    let currentPrincipalCostBasis: Double
+    let currentFeeCostBasis: Double
+    let currentCostBasis: Double
+    let avgCost: Double
+    let breakEvenPrice: Double
+    let realizedProfit: Double
+    let unrealizedProfit: Double
+    let cumulativeProfit: Double
+    let totalFees: Double
+    let buyAmount: Double
+    let sellAmount: Double
+    let transactions: [PositionTransaction]
+
+    func estimatedTodayProfit(currentPrice: Double, yesterdayPrice: Double) -> Double {
+        currentGrams * (currentPrice - yesterdayPrice)
+    }
+}
+
+enum PositionLedger {
+    static func summarize(
+        transactions: [PositionTransaction],
+        currentPrice: Double? = nil
+    ) -> PositionPerformance? {
+        let sorted = transactions.sorted {
+            if $0.date == $1.date {
+                return $0.id < $1.id
+            }
+            return $0.date < $1.date
+        }
+
+        guard let source = sorted.compactMap(\.source).last else {
+            return nil
+        }
+
+        let validTransactions = sorted.filter {
+            $0.source == source && $0.grams > 0 && $0.price > 0
+        }
+
+        guard !validTransactions.isEmpty else {
+            return nil
+        }
+
+        var gramsHeld = 0.0
+        var principalCostBasis = 0.0
+        var feeCostBasis = 0.0
+        var realizedProfit = 0.0
+        var totalFees = 0.0
+        var buyAmount = 0.0
+        var sellAmount = 0.0
+
+        for transaction in validTransactions {
+            switch transaction.type {
+            case .buy:
+                gramsHeld += transaction.grams
+                principalCostBasis += transaction.grossAmount
+                feeCostBasis += transaction.fee
+                totalFees += transaction.fee
+                buyAmount += transaction.grossAmount
+            case .sell:
+                let sellableGrams = min(transaction.grams, gramsHeld)
+                guard sellableGrams > 0 else { continue }
+
+                let averagePrincipalCost = gramsHeld > 0 ? principalCostBasis / gramsHeld : 0
+                let averageFeeCost = gramsHeld > 0 ? feeCostBasis / gramsHeld : 0
+                let removedPrincipalCost = averagePrincipalCost * sellableGrams
+                let removedFeeCost = averageFeeCost * sellableGrams
+                let removedCostBasis = removedPrincipalCost + removedFeeCost
+                let netProceeds = (sellableGrams * transaction.price) - transaction.fee
+
+                realizedProfit += netProceeds - removedCostBasis
+                sellAmount += sellableGrams * transaction.price
+                totalFees += transaction.fee
+                gramsHeld -= sellableGrams
+                principalCostBasis -= removedPrincipalCost
+                feeCostBasis -= removedFeeCost
+
+                if gramsHeld <= 0.0000001 {
+                    gramsHeld = 0
+                    principalCostBasis = 0
+                    feeCostBasis = 0
+                }
+            }
+        }
+
+        guard gramsHeld > 0 || realizedProfit != 0 || !validTransactions.isEmpty else {
+            return nil
+        }
+
+        let currentCostBasis = principalCostBasis + feeCostBasis
+        let averageCost = gramsHeld > 0 ? principalCostBasis / gramsHeld : 0
+        let breakEvenPrice = gramsHeld > 0 ? currentCostBasis / gramsHeld : 0
+        let marketValue = currentPrice.map { $0 * gramsHeld } ?? 0
+        let unrealizedProfit = currentPrice.map { _ in marketValue - currentCostBasis } ?? 0
+
+        return PositionPerformance(
+            source: source,
+            currentGrams: gramsHeld,
+            currentPrincipalCostBasis: principalCostBasis,
+            currentFeeCostBasis: feeCostBasis,
+            currentCostBasis: currentCostBasis,
+            avgCost: averageCost,
+            breakEvenPrice: breakEvenPrice,
+            realizedProfit: realizedProfit,
+            unrealizedProfit: unrealizedProfit,
+            cumulativeProfit: realizedProfit + unrealizedProfit,
+            totalFees: totalFees,
+            buyAmount: buyAmount,
+            sellAmount: sellAmount,
+            transactions: validTransactions
+        )
+    }
+
+    static func positionInfo(from transactions: [PositionTransaction]) -> PositionInfo? {
+        guard let summary = summarize(transactions: transactions) else {
+            return nil
+        }
+
+        guard summary.currentGrams > 0 else {
+            return nil
+        }
+
+        return PositionInfo(
+            grams: summary.currentGrams,
+            avgPrice: summary.avgCost,
+            sourceRawValue: summary.source.rawValue,
+            feeMode: .perGram,
+            feeValue: summary.currentFeeCostBasis / max(summary.currentGrams, 0.0000001)
+        )
     }
 }
 

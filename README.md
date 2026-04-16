@@ -87,6 +87,18 @@ bash build.sh
 - **文件持久化** - 数据存储在 Application Support 目录，debug/release 一致
 - **网络适配** - 智能处理不同 API 的数据格式和编码（JSON / GB18030）
 
+## iPhone 版可行性
+
+当前仓库可以扩展成你自己用的 iPhone App。现有业务层和数据层复用率很高，主要需要替换的是 macOS 状态栏与菜单交互。
+
+仓库里已经补了一个 iOS 三 tab 骨架：
+
+- `行情`
+- `持仓`
+- `设置`
+
+接入方式和文件清单见 [docs/IOS_APP_SETUP.md](./docs/IOS_APP_SETUP.md)。
+
 ## 许可证
 
 MIT License

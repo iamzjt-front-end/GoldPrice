@@ -416,7 +416,7 @@ struct MiniChartView: View {
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
-        .background(Color(NSColor.windowBackgroundColor).opacity(0.96))
+        .background(Color.appCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)

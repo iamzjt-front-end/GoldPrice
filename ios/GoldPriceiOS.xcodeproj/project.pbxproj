@@ -1,0 +1,573 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		003A7A98E351901FC23F162C /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4C3A585AD1FB36B5BBB42F5C /* ActivityKit.framework */; };
+		1188599D5EC19C44A4C968A0 /* PriceChartPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1A9644DB39F91D0AF9AFEE /* PriceChartPanel.swift */; };
+		1D3205D4EF58F9B5075446C9 /* GoldPriceMobileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4E4D2ABB08777D97DAFC37 /* GoldPriceMobileViewModel.swift */; };
+		2078926F2DEE180AC2BB1A6F /* PriceHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43BA80EEF57BEA0AEE7226A5 /* PriceHistoryManager.swift */; };
+		426C645F044CF30168B98B90 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4C3A585AD1FB36B5BBB42F5C /* ActivityKit.framework */; };
+		5CE61C7BAEEF81C6EDA61295 /* PriceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076FB95B2F27B87CA1C4704B /* PriceModels.swift */; };
+		74E41868F6C0FE1DCA9C6A0A /* OfficialIntradayChartService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9B63CA879694E896DA15A0 /* OfficialIntradayChartService.swift */; };
+		8267CC4CFBCE42A15059C857 /* GoldPriceMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AA298711C103835818524A8 /* GoldPriceMobileApp.swift */; };
+		9768308FD3C928970D6C6736 /* GoldPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C52E7FA17A1A63E5EDCBC34 /* GoldPriceService.swift */; };
+		A06CD77E3B66042CE16A885A /* GoldPriceLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C3FE17D95CC1E005A48FF45 /* GoldPriceLiveActivityBundle.swift */; };
+		A0D0B6D2F1CB06C09024FE02 /* GoldPriceLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3996B80EF06D7B1B60DCDADC /* GoldPriceLiveActivityAttributes.swift */; };
+		A9AA28353E8BF496CA95F3C5 /* MiniChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E219C2261BE614770D95B8C /* MiniChartView.swift */; };
+		B2611F694D0245E5C2117642 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5FE6A13E0F6283CF43C4713F /* Foundation.framework */; };
+		B623FAB182CFA9CED2671ECE /* GoldPriceLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = C545ABDFD76BA89D246F38A4 /* GoldPriceLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CA88965CA1005033A11507C3 /* GoldPriceLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60A4ADC1380DDC6513B26DA8 /* GoldPriceLiveActivityManager.swift */; };
+		CCE62D00F8EE5BFF10F3B8B4 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6214AA4263283D9203C011B4 /* WidgetKit.framework */; };
+		CECA4E2EB9F058E8DCC14D75 /* GoldPriceLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D823D8B7C0ED8F8766EFE5B /* GoldPriceLiveActivityWidget.swift */; };
+		D78228A8A761973ADF011619 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A17DE7184B87FEE614D0FC0F /* Assets.xcassets */; };
+		D7824DDE14714338BEE7FBFF /* GoldPriceLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3996B80EF06D7B1B60DCDADC /* GoldPriceLiveActivityAttributes.swift */; };
+		F26258DEAAA4A2C5EFEFDE6A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5FE6A13E0F6283CF43C4713F /* Foundation.framework */; };
+		F3D746704672C2EE31B142CD /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B3CA6184EEC798A7CC81240 /* AppTheme.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5EF915DE9DD1490C69A30266 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 67FBDAFE9D9671049343ABE7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4CB53CC7C22A3781910DC4DF;
+			remoteInfo = GoldPriceLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		1298C8515CA1D2CB2C28499B /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B623FAB182CFA9CED2671ECE /* GoldPriceLiveActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		076FB95B2F27B87CA1C4704B /* PriceModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PriceModels.swift; path = ../Sources/Models/PriceModels.swift; sourceTree = "<group>"; };
+		1E219C2261BE614770D95B8C /* MiniChartView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MiniChartView.swift; path = ../Sources/Views/MenuItems/MiniChartView.swift; sourceTree = "<group>"; };
+		2AA298711C103835818524A8 /* GoldPriceMobileApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoldPriceMobileApp.swift; path = ../Sources/Mobile/GoldPriceMobileApp.swift; sourceTree = "<group>"; };
+		3996B80EF06D7B1B60DCDADC /* GoldPriceLiveActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoldPriceLiveActivityAttributes.swift; path = ../Sources/Shared/GoldPriceLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		3C52E7FA17A1A63E5EDCBC34 /* GoldPriceService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoldPriceService.swift; path = ../Sources/Services/GoldPriceService.swift; sourceTree = "<group>"; };
+		43BA80EEF57BEA0AEE7226A5 /* PriceHistoryManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PriceHistoryManager.swift; path = ../Sources/Services/PriceHistoryManager.swift; sourceTree = "<group>"; };
+		4B3CA6184EEC798A7CC81240 /* AppTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppTheme.swift; path = ../Sources/Shared/AppTheme.swift; sourceTree = "<group>"; };
+		4C3A585AD1FB36B5BBB42F5C /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/ActivityKit.framework; sourceTree = DEVELOPER_DIR; };
+		4C3FE17D95CC1E005A48FF45 /* GoldPriceLiveActivityBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoldPriceLiveActivityBundle.swift; sourceTree = "<group>"; };
+		5B1A9644DB39F91D0AF9AFEE /* PriceChartPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PriceChartPanel.swift; path = ../Sources/Shared/PriceChartPanel.swift; sourceTree = "<group>"; };
+		5FE6A13E0F6283CF43C4713F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		60A4ADC1380DDC6513B26DA8 /* GoldPriceLiveActivityManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoldPriceLiveActivityManager.swift; path = ../Sources/Mobile/GoldPriceLiveActivityManager.swift; sourceTree = "<group>"; };
+		6214AA4263283D9203C011B4 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/WidgetKit.framework; sourceTree = DEVELOPER_DIR; };
+		9B9B63CA879694E896DA15A0 /* OfficialIntradayChartService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfficialIntradayChartService.swift; path = ../Sources/Services/OfficialIntradayChartService.swift; sourceTree = "<group>"; };
+		9C6CA60C8205F32272B4EF82 /* GoldPriceiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GoldPriceiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9D823D8B7C0ED8F8766EFE5B /* GoldPriceLiveActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoldPriceLiveActivityWidget.swift; sourceTree = "<group>"; };
+		A17DE7184B87FEE614D0FC0F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AF4E4D2ABB08777D97DAFC37 /* GoldPriceMobileViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GoldPriceMobileViewModel.swift; path = ../Sources/Mobile/GoldPriceMobileViewModel.swift; sourceTree = "<group>"; };
+		C545ABDFD76BA89D246F38A4 /* GoldPriceLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GoldPriceLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C77FA5ECFAC948F53647ADC0 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		736BFB12E7F2B032F7CB80B6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B2611F694D0245E5C2117642 /* Foundation.framework in Frameworks */,
+				003A7A98E351901FC23F162C /* ActivityKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FF48B338A4FCCA066AF78B55 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F26258DEAAA4A2C5EFEFDE6A /* Foundation.framework in Frameworks */,
+				426C645F044CF30168B98B90 /* ActivityKit.framework in Frameworks */,
+				CCE62D00F8EE5BFF10F3B8B4 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		10BBC4A0C328E7F30BC3367E /* GoldPriceLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				4C3FE17D95CC1E005A48FF45 /* GoldPriceLiveActivityBundle.swift */,
+				9D823D8B7C0ED8F8766EFE5B /* GoldPriceLiveActivityWidget.swift */,
+				C77FA5ECFAC948F53647ADC0 /* Info.plist */,
+			);
+			name = GoldPriceLiveActivity;
+			path = GoldPriceLiveActivity;
+			sourceTree = "<group>";
+		};
+		2C4112DB91F6F93A40DC8FB6 = {
+			isa = PBXGroup;
+			children = (
+				4371DD54DA2F529ECB93D82B /* Products */,
+				A014DA81B1F37BF0EB9211C0 /* Frameworks */,
+				6615B010B2E49B22582639B7 /* GoldPriceiOS */,
+				10BBC4A0C328E7F30BC3367E /* GoldPriceLiveActivity */,
+				7902BD2980C64FD320ABE0E3 /* SharedSources */,
+			);
+			sourceTree = "<group>";
+		};
+		4371DD54DA2F529ECB93D82B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9C6CA60C8205F32272B4EF82 /* GoldPriceiOS.app */,
+				C545ABDFD76BA89D246F38A4 /* GoldPriceLiveActivity.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6615B010B2E49B22582639B7 /* GoldPriceiOS */ = {
+			isa = PBXGroup;
+			children = (
+				A17DE7184B87FEE614D0FC0F /* Assets.xcassets */,
+			);
+			name = GoldPriceiOS;
+			path = GoldPriceiOS;
+			sourceTree = "<group>";
+		};
+		7902BD2980C64FD320ABE0E3 /* SharedSources */ = {
+			isa = PBXGroup;
+			children = (
+				076FB95B2F27B87CA1C4704B /* PriceModels.swift */,
+				3C52E7FA17A1A63E5EDCBC34 /* GoldPriceService.swift */,
+				9B9B63CA879694E896DA15A0 /* OfficialIntradayChartService.swift */,
+				43BA80EEF57BEA0AEE7226A5 /* PriceHistoryManager.swift */,
+				4B3CA6184EEC798A7CC81240 /* AppTheme.swift */,
+				3996B80EF06D7B1B60DCDADC /* GoldPriceLiveActivityAttributes.swift */,
+				5B1A9644DB39F91D0AF9AFEE /* PriceChartPanel.swift */,
+				1E219C2261BE614770D95B8C /* MiniChartView.swift */,
+				60A4ADC1380DDC6513B26DA8 /* GoldPriceLiveActivityManager.swift */,
+				AF4E4D2ABB08777D97DAFC37 /* GoldPriceMobileViewModel.swift */,
+				2AA298711C103835818524A8 /* GoldPriceMobileApp.swift */,
+			);
+			name = SharedSources;
+			sourceTree = "<group>";
+		};
+		A014DA81B1F37BF0EB9211C0 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				BA1F26206508FA47F3C272AD /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		BA1F26206508FA47F3C272AD /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				5FE6A13E0F6283CF43C4713F /* Foundation.framework */,
+				4C3A585AD1FB36B5BBB42F5C /* ActivityKit.framework */,
+				6214AA4263283D9203C011B4 /* WidgetKit.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4CB53CC7C22A3781910DC4DF /* GoldPriceLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E5D2A3A0A4F11CEEE9E74E0 /* Build configuration list for PBXNativeTarget "GoldPriceLiveActivity" */;
+			buildPhases = (
+				163EFC4622CC444C33F8E77E /* Sources */,
+				FF48B338A4FCCA066AF78B55 /* Frameworks */,
+				CD959696C8CE0F2DE7CD710A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GoldPriceLiveActivity;
+			productName = GoldPriceLiveActivity;
+			productReference = C545ABDFD76BA89D246F38A4 /* GoldPriceLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		B56430672AD5EBE24681D3D6 /* GoldPriceiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F2FBBD21BCBE2C046CEE609B /* Build configuration list for PBXNativeTarget "GoldPriceiOS" */;
+			buildPhases = (
+				3943F34B08B89F4C2977E218 /* Sources */,
+				736BFB12E7F2B032F7CB80B6 /* Frameworks */,
+				35AFE61E357FE82559552778 /* Resources */,
+				1298C8515CA1D2CB2C28499B /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7B413BF8C0838A5AE4300C32 /* PBXTargetDependency */,
+			);
+			name = GoldPriceiOS;
+			productName = GoldPriceiOS;
+			productReference = 9C6CA60C8205F32272B4EF82 /* GoldPriceiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		67FBDAFE9D9671049343ABE7 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					4CB53CC7C22A3781910DC4DF = {
+						CreatedOnToolsVersion = 26.0;
+						ProvisioningStyle = Automatic;
+					};
+					B56430672AD5EBE24681D3D6 = {
+						CreatedOnToolsVersion = 26.0;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = D182D49A11E089B16759F69F /* Build configuration list for PBXProject "GoldPriceiOS" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 2C4112DB91F6F93A40DC8FB6;
+			minimizedProjectReferenceProxies = 0;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4371DD54DA2F529ECB93D82B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B56430672AD5EBE24681D3D6 /* GoldPriceiOS */,
+				4CB53CC7C22A3781910DC4DF /* GoldPriceLiveActivity */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		35AFE61E357FE82559552778 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D78228A8A761973ADF011619 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CD959696C8CE0F2DE7CD710A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		163EFC4622CC444C33F8E77E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D7824DDE14714338BEE7FBFF /* GoldPriceLiveActivityAttributes.swift in Sources */,
+				A06CD77E3B66042CE16A885A /* GoldPriceLiveActivityBundle.swift in Sources */,
+				CECA4E2EB9F058E8DCC14D75 /* GoldPriceLiveActivityWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3943F34B08B89F4C2977E218 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CE61C7BAEEF81C6EDA61295 /* PriceModels.swift in Sources */,
+				9768308FD3C928970D6C6736 /* GoldPriceService.swift in Sources */,
+				74E41868F6C0FE1DCA9C6A0A /* OfficialIntradayChartService.swift in Sources */,
+				2078926F2DEE180AC2BB1A6F /* PriceHistoryManager.swift in Sources */,
+				F3D746704672C2EE31B142CD /* AppTheme.swift in Sources */,
+				A0D0B6D2F1CB06C09024FE02 /* GoldPriceLiveActivityAttributes.swift in Sources */,
+				1188599D5EC19C44A4C968A0 /* PriceChartPanel.swift in Sources */,
+				A9AA28353E8BF496CA95F3C5 /* MiniChartView.swift in Sources */,
+				CA88965CA1005033A11507C3 /* GoldPriceLiveActivityManager.swift in Sources */,
+				1D3205D4EF58F9B5075446C9 /* GoldPriceMobileViewModel.swift in Sources */,
+				8267CC4CFBCE42A15059C857 /* GoldPriceMobileApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7B413BF8C0838A5AE4300C32 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = GoldPriceLiveActivity;
+			target = 4CB53CC7C22A3781910DC4DF /* GoldPriceLiveActivity */;
+			targetProxy = 5EF915DE9DD1490C69A30266 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4F9B0901CE9D8A1CADBB9EA2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4V6N8R7NP;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = GoldPriceLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iamzjt.GoldPriceMobile.LiveActivity;
+				PRODUCT_NAME = GoldPriceLiveActivity;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		6A5A9633C9883B38CFCCB2A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4V6N8R7NP;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = GoldPrice;
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iamzjt.GoldPriceMobile;
+				PRODUCT_NAME = GoldPrice;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		872161156E610D0D027E575B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C656A45B05D00BE39860F0A7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C66575F2FE37200807D32EA0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4V6N8R7NP;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = GoldPriceLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iamzjt.GoldPriceMobile.LiveActivity;
+				PRODUCT_NAME = GoldPriceLiveActivity;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CAC20D6510F31C2E69B5B588 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S4V6N8R7NP;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = GoldPrice;
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iamzjt.GoldPriceMobile;
+				PRODUCT_NAME = GoldPrice;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3E5D2A3A0A4F11CEEE9E74E0 /* Build configuration list for PBXNativeTarget "GoldPriceLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C66575F2FE37200807D32EA0 /* Release */,
+				4F9B0901CE9D8A1CADBB9EA2 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D182D49A11E089B16759F69F /* Build configuration list for PBXProject "GoldPriceiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C656A45B05D00BE39860F0A7 /* Debug */,
+				872161156E610D0D027E575B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F2FBBD21BCBE2C046CEE609B /* Build configuration list for PBXNativeTarget "GoldPriceiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6A5A9633C9883B38CFCCB2A6 /* Release */,
+				CAC20D6510F31C2E69B5B588 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 67FBDAFE9D9671049343ABE7 /* Project object */;
+}
