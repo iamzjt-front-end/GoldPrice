@@ -1,5 +1,15 @@
 import Foundation
 
+private enum OfficialIntradayChartFormatters {
+    static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+}
+
 struct IntradayChartPoint: Equatable {
     enum Marker: String {
         case highKey
@@ -152,16 +162,11 @@ final class OfficialIntradayChartService {
             throw ServiceError.invalidPayload
         }
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-
         let points = datas.compactMap { item -> IntradayChartPoint? in
             guard
                 let value = item["value"] as? [String],
                 value.count >= 2,
-                let timestamp = formatter.date(from: value[0]),
+                let timestamp = OfficialIntradayChartFormatters.timestampFormatter.date(from: value[0]),
                 let price = Double(value[1])
             else {
                 return nil

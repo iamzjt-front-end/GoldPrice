@@ -877,6 +877,7 @@ struct PositionTransaction: Codable, Equatable, Identifiable {
         case grams
         case price
         case fee
+        case feeRate
         case note
     }
 
@@ -920,6 +921,47 @@ struct PositionTransaction: Codable, Equatable, Identifiable {
     var grossAmount: Double {
         grams * price
     }
+
+    var feeRate: Double {
+        max(0, fee)
+    }
+
+    func feeAmount(referencePrice: Double? = nil) -> Double {
+        let pricingReference = max(0, referencePrice ?? price)
+        return grams * pricingReference * feeRate / 100
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        date = try container.decodeIfPresent(Date.self, forKey: .date) ?? Date()
+        sourceRawValue = try container.decode(String.self, forKey: .sourceRawValue)
+        typeRawValue = try container.decodeIfPresent(String.self, forKey: .typeRawValue) ?? PositionTransactionType.buy.rawValue
+        grams = max(0, try container.decodeIfPresent(Double.self, forKey: .grams) ?? 0)
+        price = max(0, try container.decodeIfPresent(Double.self, forKey: .price) ?? 0)
+        note = (try container.decodeIfPresent(String.self, forKey: .note) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let decodedFeeRate = try container.decodeIfPresent(Double.self, forKey: .feeRate) {
+            fee = max(0, decodedFeeRate)
+        } else {
+            let legacyFeeAmount = max(0, try container.decodeIfPresent(Double.self, forKey: .fee) ?? 0)
+            let tradeAmount = max(grams * price, 0.0000001)
+            fee = tradeAmount > 0 ? legacyFeeAmount / tradeAmount * 100 : 0
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(date, forKey: .date)
+        try container.encode(sourceRawValue, forKey: .sourceRawValue)
+        try container.encode(typeRawValue, forKey: .typeRawValue)
+        try container.encode(max(0, grams), forKey: .grams)
+        try container.encode(max(0, price), forKey: .price)
+        try container.encode(feeRate, forKey: .fee)
+        try container.encode(feeRate, forKey: .feeRate)
+        try container.encode(note.trimmingCharacters(in: .whitespacesAndNewlines), forKey: .note)
+    }
 }
 
 struct PositionPerformance: Equatable {
@@ -927,6 +969,7 @@ struct PositionPerformance: Equatable {
     let currentGrams: Double
     let currentPrincipalCostBasis: Double
     let currentFeeCostBasis: Double
+    let currentFeeRate: Double
     let currentCostBasis: Double
     let avgCost: Double
     let breakEvenPrice: Double
@@ -948,12 +991,7 @@ enum PositionLedger {
         transactions: [PositionTransaction],
         currentPrice: Double? = nil
     ) -> PositionPerformance? {
-        let sorted = transactions.sorted {
-            if $0.date == $1.date {
-                return $0.id < $1.id
-            }
-            return $0.date < $1.date
-        }
+        let sorted = orderedTransactionsForLedger(transactions)
 
         guard let source = sorted.compactMap(\.source).last else {
             return nil
@@ -969,42 +1007,45 @@ enum PositionLedger {
 
         var gramsHeld = 0.0
         var principalCostBasis = 0.0
-        var feeCostBasis = 0.0
+        var heldFeeRateBasis = 0.0
         var realizedProfit = 0.0
-        var totalFees = 0.0
+        var totalFeeRateBasis = 0.0
         var buyAmount = 0.0
         var sellAmount = 0.0
+        let feeReferencePrice = max(currentPrice ?? validTransactions.last?.price ?? 0, 0)
 
         for transaction in validTransactions {
             switch transaction.type {
             case .buy:
                 gramsHeld += transaction.grams
                 principalCostBasis += transaction.grossAmount
-                feeCostBasis += transaction.fee
-                totalFees += transaction.fee
+                heldFeeRateBasis += transaction.grams * transaction.feeRate
+                totalFeeRateBasis += transaction.grams * transaction.feeRate
                 buyAmount += transaction.grossAmount
             case .sell:
                 let sellableGrams = min(transaction.grams, gramsHeld)
                 guard sellableGrams > 0 else { continue }
 
                 let averagePrincipalCost = gramsHeld > 0 ? principalCostBasis / gramsHeld : 0
-                let averageFeeCost = gramsHeld > 0 ? feeCostBasis / gramsHeld : 0
+                let averageFeeRate = gramsHeld > 0 ? heldFeeRateBasis / gramsHeld : 0
                 let removedPrincipalCost = averagePrincipalCost * sellableGrams
-                let removedFeeCost = averageFeeCost * sellableGrams
+                let removedFeeRateBasis = averageFeeRate * sellableGrams
+                let removedFeeCost = feeReferencePrice * removedFeeRateBasis / 100
                 let removedCostBasis = removedPrincipalCost + removedFeeCost
-                let netProceeds = (sellableGrams * transaction.price) - transaction.fee
+                let sellFeeAmount = sellableGrams * feeReferencePrice * transaction.feeRate / 100
+                let netProceeds = (sellableGrams * transaction.price) - sellFeeAmount
 
                 realizedProfit += netProceeds - removedCostBasis
                 sellAmount += sellableGrams * transaction.price
-                totalFees += transaction.fee
+                totalFeeRateBasis += sellableGrams * transaction.feeRate
                 gramsHeld -= sellableGrams
                 principalCostBasis -= removedPrincipalCost
-                feeCostBasis -= removedFeeCost
+                heldFeeRateBasis -= removedFeeRateBasis
 
                 if gramsHeld <= 0.0000001 {
                     gramsHeld = 0
                     principalCostBasis = 0
-                    feeCostBasis = 0
+                    heldFeeRateBasis = 0
                 }
             }
         }
@@ -1013,7 +1054,10 @@ enum PositionLedger {
             return nil
         }
 
-        let currentCostBasis = principalCostBasis + feeCostBasis
+        let currentFeeCostBasis = feeReferencePrice * heldFeeRateBasis / 100
+        let currentFeeRate = gramsHeld > 0 ? heldFeeRateBasis / gramsHeld : 0
+        let totalFees = feeReferencePrice * totalFeeRateBasis / 100
+        let currentCostBasis = principalCostBasis + currentFeeCostBasis
         let averageCost = gramsHeld > 0 ? principalCostBasis / gramsHeld : 0
         let breakEvenPrice = gramsHeld > 0 ? currentCostBasis / gramsHeld : 0
         let marketValue = currentPrice.map { $0 * gramsHeld } ?? 0
@@ -1023,7 +1067,8 @@ enum PositionLedger {
             source: source,
             currentGrams: gramsHeld,
             currentPrincipalCostBasis: principalCostBasis,
-            currentFeeCostBasis: feeCostBasis,
+            currentFeeCostBasis: currentFeeCostBasis,
+            currentFeeRate: currentFeeRate,
             currentCostBasis: currentCostBasis,
             avgCost: averageCost,
             breakEvenPrice: breakEvenPrice,
@@ -1050,9 +1095,43 @@ enum PositionLedger {
             grams: summary.currentGrams,
             avgPrice: summary.avgCost,
             sourceRawValue: summary.source.rawValue,
-            feeMode: .perGram,
-            feeValue: summary.currentFeeCostBasis / max(summary.currentGrams, 0.0000001)
+            feeMode: .percentage,
+            feeValue: summary.currentFeeRate
         )
+    }
+
+    private static func orderedTransactionsForLedger(_ transactions: [PositionTransaction]) -> [PositionTransaction] {
+        guard transactions.count > 1 else { return transactions }
+
+        var isAscending = true
+        var isDescending = true
+
+        for index in 1..<transactions.count {
+            let previous = transactions[index - 1]
+            let current = transactions[index]
+            if transactionComesBefore(previous, current) {
+                isDescending = false
+            } else if transactionComesBefore(current, previous) {
+                isAscending = false
+            }
+
+            if !isAscending && !isDescending {
+                return transactions.sorted(by: transactionComesBefore)
+            }
+        }
+
+        if isAscending {
+            return transactions
+        }
+
+        return Array(transactions.reversed())
+    }
+
+    private static func transactionComesBefore(_ lhs: PositionTransaction, _ rhs: PositionTransaction) -> Bool {
+        if lhs.date == rhs.date {
+            return lhs.id < rhs.id
+        }
+        return lhs.date < rhs.date
     }
 }
 
@@ -1087,7 +1166,7 @@ struct PositionInfo: Codable, Equatable {
     init(
         lots: [Lot],
         sourceRawValue: String,
-        feeMode: PositionFeeMode = .perGram,
+        feeMode: PositionFeeMode = .percentage,
         feeValue: Double = 0
     ) {
         self.lots = lots.filter { $0.grams > 0 && $0.price > 0 }
@@ -1100,7 +1179,7 @@ struct PositionInfo: Codable, Equatable {
         grams: Double,
         avgPrice: Double,
         sourceRawValue: String,
-        feeMode: PositionFeeMode = .perGram,
+        feeMode: PositionFeeMode = .percentage,
         feeValue: Double = 0
     ) {
         self.init(
@@ -1119,8 +1198,12 @@ struct PositionInfo: Codable, Equatable {
         lots.reduce(0) { $0 + ($1.grams * $1.price) }
     }
 
+    func totalCost(currentPrice: Double? = nil) -> Double {
+        purchaseCost + totalFee(referencePrice: currentPrice)
+    }
+
     var totalCost: Double {
-        purchaseCost + totalFee
+        totalCost(currentPrice: nil)
     }
 
     var avgPrice: Double {
@@ -1129,10 +1212,14 @@ struct PositionInfo: Codable, Equatable {
         return purchaseCost / totalGrams
     }
 
-    var breakEvenPrice: Double {
+    func breakEvenPrice(currentPrice: Double? = nil) -> Double {
         let totalGrams = grams
         guard totalGrams > 0 else { return 0 }
-        return totalCost / totalGrams
+        return totalCost(currentPrice: currentPrice) / totalGrams
+    }
+
+    var breakEvenPrice: Double {
+        breakEvenPrice(currentPrice: nil)
     }
 
     var source: GoldPriceSource? {
@@ -1140,25 +1227,31 @@ struct PositionInfo: Codable, Equatable {
     }
 
     var feeMode: PositionFeeMode {
-        PositionFeeMode(rawValue: feeModeRawValue) ?? .perGram
+        PositionFeeMode(rawValue: feeModeRawValue) ?? .percentage
     }
 
-    var totalFee: Double {
+    func totalFee(referencePrice: Double? = nil) -> Double {
         switch feeMode {
         case .perGram:
             return max(0, feeValue) * grams
         case .percentage:
-            return purchaseCost * max(0, feeValue) / 100
+            let pricingReference = max(0, referencePrice ?? avgPrice)
+            return grams * pricingReference * max(0, feeValue) / 100
         }
     }
 
+    var totalFee: Double {
+        totalFee(referencePrice: nil)
+    }
+
     func profit(currentPrice: Double) -> Double {
-        (currentPrice * grams) - totalCost
+        (currentPrice * grams) - totalCost(currentPrice: currentPrice)
     }
 
     func profitRate(currentPrice: Double) -> Double {
-        guard totalCost > 0 else { return 0 }
-        return profit(currentPrice: currentPrice) / totalCost * 100
+        let liveTotalCost = totalCost(currentPrice: currentPrice)
+        guard liveTotalCost > 0 else { return 0 }
+        return profit(currentPrice: currentPrice) / liveTotalCost * 100
     }
 
     init(from decoder: Decoder) throws {
@@ -1173,18 +1266,28 @@ struct PositionInfo: Codable, Equatable {
             lots = [Lot(grams: legacyGrams, price: legacyAvgPrice)].filter { $0.grams > 0 && $0.price > 0 }
         }
 
+        let decodedTotalGrams = lots.reduce(0) { $0 + $1.grams }
+        let decodedPurchaseCost = lots.reduce(0) { $0 + ($1.grams * $1.price) }
+        let decodedAvgPrice = decodedTotalGrams > 0 ? decodedPurchaseCost / decodedTotalGrams : 0
+
         if let decodedFeeMode = try container.decodeIfPresent(String.self, forKey: .feeModeRawValue),
            let feeMode = PositionFeeMode(rawValue: decodedFeeMode) {
-            feeModeRawValue = feeMode.rawValue
-            feeValue = max(0, try container.decodeIfPresent(Double.self, forKey: .feeValue) ?? 0)
+            let decodedFeeValue = max(0, try container.decodeIfPresent(Double.self, forKey: .feeValue) ?? 0)
+            switch feeMode {
+            case .percentage:
+                feeModeRawValue = PositionFeeMode.percentage.rawValue
+                feeValue = decodedFeeValue
+            case .perGram:
+                feeModeRawValue = PositionFeeMode.percentage.rawValue
+                feeValue = decodedAvgPrice > 0 ? decodedFeeValue / decodedAvgPrice * 100 : 0
+            }
         } else if let decodedFeeValue = try container.decodeIfPresent(Double.self, forKey: .feeValue) {
-            feeModeRawValue = PositionFeeMode.perGram.rawValue
-            feeValue = max(0, decodedFeeValue)
+            feeModeRawValue = PositionFeeMode.percentage.rawValue
+            feeValue = decodedAvgPrice > 0 ? max(0, decodedFeeValue) / decodedAvgPrice * 100 : 0
         } else {
             let legacyTotalFee = max(0, try container.decodeIfPresent(Double.self, forKey: .totalFee) ?? 0)
-            let totalGrams = lots.reduce(0) { $0 + $1.grams }
-            feeModeRawValue = PositionFeeMode.perGram.rawValue
-            feeValue = totalGrams > 0 ? legacyTotalFee / totalGrams : 0
+            feeModeRawValue = PositionFeeMode.percentage.rawValue
+            feeValue = decodedPurchaseCost > 0 ? legacyTotalFee / decodedPurchaseCost * 100 : 0
         }
     }
 
@@ -1194,7 +1297,7 @@ struct PositionInfo: Codable, Equatable {
         try container.encode(grams, forKey: .grams)
         try container.encode(avgPrice, forKey: .avgPrice)
         try container.encode(sourceRawValue, forKey: .sourceRawValue)
-        try container.encode(feeMode.rawValue, forKey: .feeModeRawValue)
+        try container.encode(PositionFeeMode.percentage.rawValue, forKey: .feeModeRawValue)
         try container.encode(max(0, feeValue), forKey: .feeValue)
         try container.encode(totalFee, forKey: .totalFee)
     }

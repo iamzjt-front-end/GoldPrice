@@ -78,6 +78,12 @@ private enum MobileRootTab: String {
 }
 
 private enum MobileFormatting {
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
     static func signedAmountText(_ value: Double) -> String {
         "\(value >= 0 ? "+" : "")\(format(value)) 元"
     }
@@ -91,9 +97,7 @@ private enum MobileFormatting {
     }
 
     static func timeText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: date)
+        timeFormatter.string(from: date)
     }
 }
 
@@ -580,7 +584,7 @@ private struct TradeTabView: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.primary)
 
-                    Text("持仓成本（元） \(Self.format(performance.currentCostBasis))")
+                    Text("持仓成本（含现价手续费） \(Self.format(performance.currentCostBasis))")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
                 }
@@ -594,7 +598,7 @@ private struct TradeTabView: View {
                 )
 
                 supportingMetric(
-                    title: "保本价（元/克）",
+                    title: "保本价（含现价手续费）",
                     value: Self.format(performance.breakEvenPrice),
                     tint: .primary
                 )
@@ -685,7 +689,7 @@ private struct TradeTabView: View {
             ("已实现收益（元）", Self.signedNumberText(performance.realizedProfit), performance.realizedProfit >= 0 ? .red : .goldGreen),
             ("持仓浮盈（元）", Self.signedNumberText(performance.unrealizedProfit), performance.unrealizedProfit >= 0 ? .red : .goldGreen),
             ("平均成本（元/克）", Self.format(performance.avgCost), .primary),
-            ("累计手续费（元）", Self.format(performance.totalFees), .primary)
+            ("累计手续费估算（元）", Self.format(performance.totalFees), .primary)
         ]
 
         return VStack(alignment: .leading, spacing: 14) {
@@ -808,10 +812,13 @@ private struct TradeTabView: View {
 
     private func transactionRow(_ transaction: PositionTransaction) -> some View {
         let accent: Color = transaction.type == .buy ? .red : .goldGreen
+        let currentPrice = transaction.source.flatMap(viewModel.currentPrice(for:))
+        let feeEstimateText = MobileFormatting.format(transaction.feeAmount(referencePrice: currentPrice ?? transaction.price))
+        let feeEstimateLabel = currentPrice == nil ? "按成交价估算手续费" : "按实时价估算手续费"
 
         return HStack(alignment: .top, spacing: 12) {
             NavigationLink {
-                TradeTransactionDetailView(transaction: transaction)
+                TradeTransactionDetailView(transaction: transaction, currentPrice: currentPrice)
             } label: {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
@@ -841,8 +848,12 @@ private struct TradeTabView: View {
                         Spacer()
                         transactionMetric(title: "成交价（元/克）", value: MobileFormatting.format(transaction.price))
                         Spacer()
-                        transactionMetric(title: "手续费（元）", value: MobileFormatting.format(transaction.fee))
+                        transactionMetric(title: "手续费", value: "\(MobileFormatting.format(transaction.feeRate, digits: 3))%")
                     }
+
+                    Text("\(feeEstimateLabel) \(feeEstimateText) 元")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
 
                     if !transaction.note.isEmpty {
                         Text(transaction.note)
@@ -994,6 +1005,7 @@ private struct SettingsTabView: View {
 
 private struct TradeTransactionDetailView: View {
     let transaction: PositionTransaction
+    let currentPrice: Double?
 
     private var sourceLabel: String {
         transaction.source?.rawValue ?? "未指定"
@@ -1005,6 +1017,10 @@ private struct TradeTransactionDetailView: View {
 
     private var priceLabel: String {
         MobileFormatting.format(transaction.price)
+    }
+
+    private var feeEstimateTitle: String {
+        currentPrice == nil ? "手续费估算（按成交价）" : "手续费估算（按实时价）"
     }
 
     var body: some View {
@@ -1022,7 +1038,11 @@ private struct TradeTransactionDetailView: View {
                 LabeledContent("克数（克）", value: MobileFormatting.format(transaction.grams, digits: 4))
                 LabeledContent("成交价（元/克）", value: priceLabel)
                 LabeledContent("交易金额（元）", value: amountLabel)
-                LabeledContent("手续费（元）", value: MobileFormatting.format(transaction.fee))
+                LabeledContent("手续费费率（%）", value: MobileFormatting.format(transaction.feeRate, digits: 3))
+                LabeledContent(
+                    feeEstimateTitle,
+                    value: MobileFormatting.format(transaction.feeAmount(referencePrice: currentPrice ?? transaction.price))
+                )
             }
 
             Section("备注") {
@@ -1094,7 +1114,7 @@ private struct PositionTransactionEditorView: View {
                         .keyboardType(.decimalPad)
                     TextField("成交价（元/克）", text: $price)
                         .keyboardType(.decimalPad)
-                    TextField("手续费（元）", text: $fee)
+                    TextField("手续费（%）", text: $fee)
                         .keyboardType(.decimalPad)
 
                     if action == .sell {
@@ -1102,6 +1122,10 @@ private struct PositionTransactionEditorView: View {
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
                     }
+
+                    Text("手续费会按当前实时金价换算成金额。")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
                 }
 
                 Section("备注") {
@@ -1157,7 +1181,7 @@ private struct PositionTransactionEditorView: View {
         }
 
         guard let parsedFee = Double(fee.trimmingCharacters(in: .whitespacesAndNewlines)), parsedFee >= 0 else {
-            errorMessage = "手续费要填数字，可以为 0。"
+            errorMessage = "手续费要填百分比数字，可以为 0。"
             return
         }
 

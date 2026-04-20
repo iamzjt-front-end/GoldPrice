@@ -8,6 +8,20 @@ private enum MainMenuRowLayout {
     static let height: CGFloat = 28
 }
 
+private enum StatusBarControllerFormatters {
+    static let updateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    static let notificationDateKeyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        return formatter
+    }()
+}
+
 private final class StatusPopupPanel: NSPanel {
     var onOrderOut: (() -> Void)?
     var onClose: (() -> Void)?
@@ -914,8 +928,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func makePositionDetailView() -> NSView {
+        let currentPrice = historyManager.position
+            .flatMap(\.source)
+            .flatMap { dataService.allSourcePrices[$0]?.priceDouble }
         let view = PositionDetailPanelView(
             position: historyManager.position,
+            currentPrice: currentPrice,
             allSources: GoldPriceSource.domesticSources,
             sourcePrices: dataService.allSourcePrices
         )
@@ -1088,9 +1106,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         submenuSources.removeAll()
 
         // Update time
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm:ss"
-        let timeStr = "更新于 \(timeFormatter.string(from: dataService.lastUpdateTime))"
+        let timeStr = "更新于 \(StatusBarControllerFormatters.updateTimeFormatter.string(from: dataService.lastUpdateTime))"
         let timeItem = NSMenuItem(title: timeStr, action: nil, keyEquivalent: "")
         timeItem.isEnabled = false
         timeItem.view = MenuMetaHeaderView(text: timeStr)
@@ -1351,9 +1367,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshUpdateTimeItem() {
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm:ss"
-        let timeStr = "更新于 \(timeFormatter.string(from: dataService.lastUpdateTime))"
+        let timeStr = "更新于 \(StatusBarControllerFormatters.updateTimeFormatter.string(from: dataService.lastUpdateTime))"
         updateTimeMenuItem?.title = timeStr
         if let view = updateTimeMenuItem?.view as? MenuMetaHeaderView {
             view.update(text: timeStr)
@@ -2292,11 +2306,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         content.body = "\(kind.label)价格：\(String(format: "%.2f", price)) \(unit)"
         content.sound = .default
 
-        let dateKey = {
-            let f = DateFormatter()
-            f.dateFormat = "yyyyMMdd"
-            return f.string(from: Date())
-        }()
+        let dateKey = StatusBarControllerFormatters.notificationDateKeyFormatter.string(from: Date())
 
         let request = UNNotificationRequest(
             identifier: "extreme-price-\(sourceRawValue)-\(kind.idTag)-\(dateKey)-\(String(format: "%.2f", price))",

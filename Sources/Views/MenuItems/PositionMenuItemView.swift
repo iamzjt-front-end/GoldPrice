@@ -3,7 +3,15 @@ import SwiftUI
 
 private enum PositionMenuItemLayout {
     static let rowWidth: CGFloat = 300
-    static let rowHeight: CGFloat = 56
+    static let rowHeight: CGFloat = 68
+}
+
+private enum PositionMenuItemFormatters {
+    static let tradeDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
 }
 
 private enum PositionDetailLayout {
@@ -229,8 +237,8 @@ class PositionDisplayView: NSView {
             heightAnchor.constraint(equalToConstant: PositionMenuItemLayout.rowHeight),
             container.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             container.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            container.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9)
         ])
     }
 }
@@ -300,8 +308,8 @@ class PositionDetailPanelView: NSView {
     private let divider = NSBox()
     private var chartView: PositionChartMenuItemView?
 
-    init(position: PositionInfo?, allSources: [GoldPriceSource], sourcePrices: [GoldPriceSource: PriceInfo]) {
-        self.infoHostingView = NSHostingView(rootView: PositionInfoContent(position: position))
+    init(position: PositionInfo?, currentPrice: Double? = nil, allSources: [GoldPriceSource], sourcePrices: [GoldPriceSource: PriceInfo]) {
+        self.infoHostingView = NSHostingView(rootView: PositionInfoContent(position: position, currentPrice: currentPrice))
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -316,8 +324,8 @@ class PositionDetailPanelView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func updatePosition(_ position: PositionInfo?) {
-        infoHostingView.rootView = PositionInfoContent(position: position)
+    func updatePosition(_ position: PositionInfo?, currentPrice: Double? = nil) {
+        infoHostingView.rootView = PositionInfoContent(position: position, currentPrice: currentPrice)
         rebuildLayout()
 
         guard let window = self.window else { return }
@@ -336,6 +344,8 @@ class PositionDetailPanelView: NSView {
         isLoading: Bool = false,
         emptyMessage: String? = nil
     ) {
+        infoHostingView.rootView = PositionInfoContent(position: position, currentPrice: currentPrice)
+
         guard let position, let currentPrice else {
             chartView?.removeFromSuperview()
             chartView = nil
@@ -428,9 +438,14 @@ class PositionDetailPanelView: NSView {
 
 private struct PositionInfoContent: View {
     let position: PositionInfo?
+    let currentPrice: Double?
 
     var body: some View {
         if let position {
+            let feeAmount = position.totalFee(referencePrice: currentPrice)
+            let feeCaption = currentPrice == nil ? "按均价估算" : "按实时金价估算"
+            let breakEvenCaption = currentPrice == nil ? "按均价含手续费保本价" : "按实时金价含手续费保本价"
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 8) {
                     Text("持仓概览")
@@ -462,8 +477,8 @@ private struct PositionInfoContent: View {
 
                         heroMetric(
                             title: "成本价",
-                            value: "\(String(format: "%.2f", position.breakEvenPrice)) 元/克",
-                            caption: "含手续费保本价"
+                            value: "\(String(format: "%.2f", position.breakEvenPrice(currentPrice: currentPrice))) 元/克",
+                            caption: breakEvenCaption
                         )
                     }
 
@@ -480,7 +495,8 @@ private struct PositionInfoContent: View {
 
                         compactMetric(
                             title: "手续费",
-                            value: "\(String(format: "%.2f", position.totalFee)) 元"
+                            value: "\(String(format: "%.2f", feeAmount)) 元",
+                            caption: "\(String(format: "%.3f", position.feeValue))% · \(feeCaption)"
                         )
                     }
                     .padding(.horizontal, 14)
@@ -545,13 +561,11 @@ private struct PositionInfoContent: View {
         .padding(.vertical, 14)
     }
 
-    private func compactMetric(title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+    private func compactMetric(title: String, value: String, caption: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
-
-            Spacer(minLength: 8)
 
             Text(value)
                 .font(.system(size: 14, weight: .semibold))
@@ -559,6 +573,13 @@ private struct PositionInfoContent: View {
                 .foregroundColor(.primary.opacity(0.94))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+
+            if let caption {
+                Text(caption)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
         .padding(.horizontal, 12)
@@ -633,7 +654,7 @@ private struct PositionDisplayContent: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
     }
 }
 
@@ -771,6 +792,7 @@ class PositionEditorView: EditableMenuItemView {
     ) {
         let hostingView = NSHostingView(rootView: TradeRecordListContent(
             allSources: allSources,
+            sourcePrices: sourcePrices,
             onContentChange: {}
         ))
         self.hostingView = hostingView
@@ -778,6 +800,7 @@ class PositionEditorView: EditableMenuItemView {
         super.init(contentView: hostingView, minWidth: PositionDetailLayout.panelWidth, dynamicallyResizes: true)
         hostingView.rootView = TradeRecordListContent(
             allSources: allSources,
+            sourcePrices: sourcePrices,
             onContentChange: { [weak self] in
                 DispatchQueue.main.async {
                     self?.updateLayoutSizeIfNeeded()
@@ -797,22 +820,19 @@ class PositionEditorView: EditableMenuItemView {
 
 private struct TradeRecordListContent: View {
     let allSources: [GoldPriceSource]
+    let sourcePrices: [GoldPriceSource: PriceInfo]
     let onContentChange: () -> Void
 
     @State private var transactions: [PositionTransaction] = PriceHistoryManager.shared.positionTransactions
     @State private var showAddForm = false
     @State private var showClearConfirmation = false
     @State private var deletingTransactionId: String?
+    @State private var editingTransaction: PositionTransaction?
     @State private var feedbackText: String?
     @State private var feedbackIsError = false
 
     private var sortedTransactions: [PositionTransaction] {
-        transactions.sorted {
-            if $0.date == $1.date {
-                return $0.id > $1.id
-            }
-            return $0.date > $1.date
-        }
+        transactions
     }
 
     var body: some View {
@@ -859,14 +879,21 @@ private struct TradeRecordListContent: View {
 
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        showAddForm.toggle()
+                        deletingTransactionId = nil
+                        showClearConfirmation = false
+
+                        if editingTransaction != nil {
+                            editingTransaction = nil
+                        } else {
+                            showAddForm.toggle()
+                        }
                     }
                     onContentChange()
                 }) {
                     HStack(spacing: 4) {
-                        Image(systemName: showAddForm ? "xmark" : "plus")
+                        Image(systemName: (showAddForm || editingTransaction != nil) ? "xmark" : "plus")
                             .font(.system(size: 10, weight: .bold))
-                        Text(showAddForm ? "取消" : "新增")
+                        Text(formButtonTitle)
                             .font(.system(size: 11, weight: .medium))
                     }
                 }
@@ -875,7 +902,20 @@ private struct TradeRecordListContent: View {
             }
 
             // Add form
-            if showAddForm {
+            if let editingTransaction {
+                TradeRecordFormContent(
+                    allSources: allSources,
+                    initialTransaction: editingTransaction,
+                    submitButtonTitle: "保存修改",
+                    onSave: { updatedTransaction in
+                        updateTransaction(updatedTransaction)
+                        self.editingTransaction = nil
+                        showFeedback("已更新", isError: false)
+                        onContentChange()
+                    }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if showAddForm {
                 TradeRecordFormContent(
                     allSources: allSources,
                     onSave: { transaction in
@@ -946,9 +986,15 @@ private struct TradeRecordListContent: View {
         return GoldPriceSource(rawValue: sourceRaw) ?? .jdZsFinance
     }
 
+    private var formButtonTitle: String {
+        if editingTransaction != nil {
+            return "取消编辑"
+        }
+        return showAddForm ? "取消" : "新增"
+    }
+
     private func updateSource(_ newSource: GoldPriceSource) {
         var updated = transactions
-        let now = Date()
         for i in updated.indices {
             updated[i].sourceRawValue = newSource.rawValue
         }
@@ -961,6 +1007,9 @@ private struct TradeRecordListContent: View {
 
     private func transactionRow(_ transaction: PositionTransaction) -> some View {
         let isDeleting = deletingTransactionId == transaction.id
+        let isEditing = editingTransaction?.id == transaction.id
+        let livePrice = transaction.source.flatMap { sourcePrices[$0]?.priceDouble }
+        let liveFeeAmount = transaction.feeAmount(referencePrice: livePrice)
 
         return HStack(alignment: .center, spacing: 8) {
             // Type badge
@@ -985,9 +1034,15 @@ private struct TradeRecordListContent: View {
                 }
 
                 HStack(spacing: 8) {
-                    Text("手续费 \(String(format: "%.2f", transaction.fee))元")
+                    Text("手续费 \(String(format: "%.3f", transaction.feeRate))%")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+
+                    if livePrice != nil {
+                        Text("现价约 \(String(format: "%.2f", liveFeeAmount))元")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
 
                     Text(formatDate(transaction.date))
                         .font(.system(size: 10))
@@ -1012,30 +1067,71 @@ private struct TradeRecordListContent: View {
                 .font(.system(size: 10))
                 .buttonStyle(.plain)
             } else {
-                Button(action: {
-                    deletingTransactionId = transaction.id
-                }) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                HStack(spacing: 10) {
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showAddForm = false
+                            showClearConfirmation = false
+                            deletingTransactionId = nil
+                            editingTransaction = isEditing ? nil : transaction
+                        }
+                        onContentChange()
+                    }) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11))
+                            .foregroundColor(isEditing ? .accentColor : .secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        editingTransaction = nil
+                        deletingTransactionId = transaction.id
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(isDeleting ? Color.red.opacity(0.05) : Color.primary.opacity(0.025))
+        .background(
+            isDeleting
+                ? Color.red.opacity(0.05)
+                : (isEditing ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025))
+        )
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isDeleting ? Color.red.opacity(0.2) : Color.primary.opacity(0.05), lineWidth: 0.5)
+                .stroke(
+                    isDeleting
+                        ? Color.red.opacity(0.2)
+                        : (isEditing ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05)),
+                    lineWidth: 0.5
+                )
         )
+    }
+
+    private func updateTransaction(_ transaction: PositionTransaction) {
+        guard let index = transactions.firstIndex(where: { $0.id == transaction.id }) else {
+            showFeedback("未找到要编辑的记录", isError: true)
+            return
+        }
+
+        var updated = transactions
+        updated[index] = transaction
+        PriceHistoryManager.shared.savePositionTransactions(updated)
+        transactions = PriceHistoryManager.shared.positionTransactions
+        deletingTransactionId = nil
     }
 
     private func deleteTransaction(id: String) {
         PriceHistoryManager.shared.removePositionTransaction(id: id)
         transactions = PriceHistoryManager.shared.positionTransactions
         deletingTransactionId = nil
+        editingTransaction = nil
         showFeedback("已删除", isError: false)
         onContentChange()
     }
@@ -1045,14 +1141,13 @@ private struct TradeRecordListContent: View {
         transactions = PriceHistoryManager.shared.positionTransactions
         showClearConfirmation = false
         showAddForm = false
+        editingTransaction = nil
         showFeedback("已清仓", isError: false)
         onContentChange()
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter.string(from: date)
+        PositionMenuItemFormatters.tradeDateFormatter.string(from: date)
     }
 
     private func showFeedback(_ text: String, isError: Bool) {
@@ -1068,6 +1163,8 @@ private struct TradeRecordListContent: View {
 
 private struct TradeRecordFormContent: View {
     let allSources: [GoldPriceSource]
+    let initialTransaction: PositionTransaction?
+    let submitButtonTitle: String
     let onSave: (PositionTransaction) -> Void
 
     @State private var selectedType: PositionTransactionType = .buy
@@ -1076,8 +1173,29 @@ private struct TradeRecordFormContent: View {
     @State private var feeText: String = ""
     @State private var errorMessage: String?
 
+    init(
+        allSources: [GoldPriceSource],
+        initialTransaction: PositionTransaction? = nil,
+        submitButtonTitle: String = "保存",
+        onSave: @escaping (PositionTransaction) -> Void
+    ) {
+        self.allSources = allSources
+        self.initialTransaction = initialTransaction
+        self.submitButtonTitle = submitButtonTitle
+        self.onSave = onSave
+
+        _selectedType = State(initialValue: initialTransaction?.type ?? .buy)
+        _priceText = State(initialValue: initialTransaction.map { Self.decimalString($0.price, digits: 2) } ?? "")
+        _gramsText = State(initialValue: initialTransaction.map { Self.decimalString($0.grams, digits: 4) } ?? "")
+        _feeText = State(initialValue: initialTransaction.map { Self.decimalString($0.feeRate, digits: 3) } ?? "")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text(initialTransaction == nil ? "新增记录" : "编辑记录")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
             // Type selector
             segmentedPicker(
                 items: PositionTransactionType.allCases,
@@ -1105,13 +1223,17 @@ private struct TradeRecordFormContent: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("手续费 (元)")
+                    Text("手续费 (%)")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
-                    PastableTextField(text: $feeText, placeholder: "例如: 5.00")
+                    PastableTextField(text: $feeText, placeholder: "例如: 0.35")
                         .frame(width: 80)
                 }
             }
+
+            Text("手续费会按当前实时金价换算成金额。")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
 
             // Error message
             if let errorMessage {
@@ -1123,7 +1245,7 @@ private struct TradeRecordFormContent: View {
             // Save button
             HStack {
                 Spacer()
-                Button("保存") {
+                Button(submitButtonTitle) {
                     performSave()
                 }
                 .buttonStyle(.borderedProminent)
@@ -1152,23 +1274,31 @@ private struct TradeRecordFormContent: View {
         }
         let fee = Double(feeText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         guard fee >= 0 else {
-            errorMessage = "手续费不能为负数"
+            errorMessage = "请输入有效的手续费百分比"
             return
         }
 
-        let sourceRawValue = PriceHistoryManager.shared.position?.sourceRawValue
+        let sourceRawValue = initialTransaction?.sourceRawValue
+            ?? PriceHistoryManager.shared.position?.sourceRawValue
             ?? PriceHistoryManager.shared.positionTransactions.last?.sourceRawValue
             ?? allSources.first?.rawValue
             ?? GoldPriceSource.jdZsFinance.rawValue
 
         let transaction = PositionTransaction(
+            id: initialTransaction?.id ?? UUID().uuidString,
+            date: initialTransaction?.date ?? Date(),
             sourceRawValue: sourceRawValue,
             type: selectedType,
             grams: grams,
             price: price,
-            fee: fee
+            fee: fee,
+            note: initialTransaction?.note ?? ""
         )
         onSave(transaction)
+    }
+
+    private static func decimalString(_ value: Double, digits: Int) -> String {
+        String(format: "%.\(digits)f", value)
     }
 }
 

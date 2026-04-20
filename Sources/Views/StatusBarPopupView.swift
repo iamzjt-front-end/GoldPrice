@@ -6,6 +6,14 @@ private enum MainPanelLayout {
     static let rowWidth: CGFloat = 300
 }
 
+private enum MainPanelFormatters {
+    static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+}
+
 private struct PriceRowRepresentable: NSViewRepresentable {
     let source: GoldPriceSource
     let info: PriceInfo
@@ -216,9 +224,7 @@ struct StatusBarMainPanelView: View {
     }
 
     private var timeText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: model.lastUpdateTime)
+        MainPanelFormatters.timeFormatter.string(from: model.lastUpdateTime)
     }
 
     private var panelBackground: some View {
@@ -322,7 +328,7 @@ struct StatusBarMainPanelView: View {
                 }, onActivate: {
                     onPositionHover()
                 })
-                .frame(width: MainPanelLayout.rowWidth, height: 56)
+                .frame(width: MainPanelLayout.rowWidth, height: 68)
             } else {
                 HStack {
                     Text("我的持仓")

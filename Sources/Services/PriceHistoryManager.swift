@@ -373,19 +373,14 @@ class PriceHistoryManager {
     }
 
     private func makeLegacyTransactions(from position: PositionInfo) -> [PositionTransaction] {
-        let purchaseCost = max(position.purchaseCost, 0.0000001)
-        let totalFee = position.totalFee
         let baseDate = Date().addingTimeInterval(-Double(position.lots.count) * 60)
-
-        var remainingFee = totalFee
         return position.lots.enumerated().map { index, lot in
-            let proportionalFee: Double
-            if index == position.lots.count - 1 {
-                proportionalFee = max(0, remainingFee)
-            } else {
-                let share = (lot.grams * lot.price) / purchaseCost
-                proportionalFee = (totalFee * share).rounded(toPlaces: 2)
-                remainingFee -= proportionalFee
+            let feeRate: Double
+            switch position.feeMode {
+            case .percentage:
+                feeRate = position.feeValue
+            case .perGram:
+                feeRate = lot.price > 0 ? position.feeValue / lot.price * 100 : 0
             }
 
             return PositionTransaction(
@@ -394,16 +389,9 @@ class PriceHistoryManager {
                 type: .buy,
                 grams: lot.grams,
                 price: lot.price,
-                fee: proportionalFee,
+                fee: feeRate,
                 note: "由旧版持仓迁移"
             )
         }
-    }
-}
-
-private extension Double {
-    func rounded(toPlaces places: Int) -> Double {
-        let divisor = pow(10.0, Double(places))
-        return (self * divisor).rounded() / divisor
     }
 }

@@ -8,6 +8,7 @@ final class GoldPriceMobileViewModel: ObservableObject {
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var position: PositionInfo?
     @Published private(set) var positionTransactions: [PositionTransaction] = []
+    @Published private(set) var positionPerformance: PositionPerformance?
     @Published private(set) var settings: AppSettings
 
     private let historyManager = PriceHistoryManager.shared
@@ -47,12 +48,14 @@ final class GoldPriceMobileViewModel: ObservableObject {
         historyManager.savePosition(newPosition)
         position = newPosition
         positionTransactions = historyManager.positionTransactions
+        refreshPositionPerformance()
     }
 
     func clearPosition() {
         historyManager.clearPosition()
         position = nil
         positionTransactions = []
+        positionPerformance = nil
     }
 
     func addTransaction(
@@ -150,13 +153,6 @@ final class GoldPriceMobileViewModel: ObservableObject {
         }
     }
 
-    var positionPerformance: PositionPerformance? {
-        PositionLedger.summarize(
-            transactions: positionTransactions,
-            currentPrice: positionCurrentPrice
-        )
-    }
-
     var supportsDynamicIslandFeature: Bool {
         GoldPriceLiveActivityManager.isFeatureAvailable
     }
@@ -166,6 +162,7 @@ final class GoldPriceMobileViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] prices in
                 self?.allSourcePrices = prices
+                self?.refreshPositionPerformance()
                 self?.syncDynamicIsland()
             }
             .store(in: &cancellables)
@@ -196,13 +193,16 @@ final class GoldPriceMobileViewModel: ObservableObject {
     private func refreshLocalState() {
         settings = historyManager.settings
         position = historyManager.position
-        positionTransactions = historyManager.positionTransactions.sorted {
-            if $0.date == $1.date {
-                return $0.id > $1.id
-            }
-            return $0.date > $1.date
-        }
+        positionTransactions = historyManager.positionTransactions
+        refreshPositionPerformance()
         syncDynamicIsland(force: true)
+    }
+
+    private func refreshPositionPerformance() {
+        positionPerformance = PositionLedger.summarize(
+            transactions: positionTransactions,
+            currentPrice: positionCurrentPrice
+        )
     }
 
     private func syncDynamicIsland(force: Bool = false) {
