@@ -3,7 +3,7 @@ import SwiftUI
 
 private enum PositionMenuItemLayout {
     static let rowWidth: CGFloat = 300
-    static let rowHeight: CGFloat = 44
+    static let rowHeight: CGFloat = 56
 }
 
 private enum PositionDetailLayout {
@@ -165,9 +165,7 @@ class PositionDisplayView: NSView {
 
     func update(position: PositionInfo, currentPrice: Double?) {
         gramsLabel.stringValue = "\(String(format: "%.4f", position.grams))克"
-        let costLabel = position.totalFee > 0 ? "成本" : "均价"
-        let costPrice = position.totalFee > 0 ? position.breakEvenPrice : position.avgPrice
-        avgPriceLabel.stringValue = "\(costLabel) \(String(format: "%.2f", costPrice)) 元/克"
+        avgPriceLabel.stringValue = "均价 \(String(format: "%.2f", position.avgPrice)) 元/克"
 
         if let currentPrice {
             let profit = position.profit(currentPrice: currentPrice)
@@ -189,24 +187,24 @@ class PositionDisplayView: NSView {
         titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
         titleLabel.textColor = .secondaryLabelColor
 
-        gramsLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        gramsLabel.textColor = .labelColor
+        avgPriceLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        avgPriceLabel.textColor = .labelColor
 
-        avgPriceLabel.font = .systemFont(ofSize: 11)
-        avgPriceLabel.textColor = .secondaryLabelColor
+        gramsLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        gramsLabel.textColor = .secondaryLabelColor
 
         profitLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .bold)
         rateLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
 
-        let leftMetaStack = NSStackView(views: [gramsLabel, avgPriceLabel])
-        leftMetaStack.orientation = .horizontal
-        leftMetaStack.alignment = .centerY
-        leftMetaStack.spacing = 6
+        let leftMetaStack = NSStackView(views: [avgPriceLabel, gramsLabel])
+        leftMetaStack.orientation = .vertical
+        leftMetaStack.alignment = .leading
+        leftMetaStack.spacing = 1
 
         let leftStack = NSStackView(views: [titleLabel, leftMetaStack])
         leftStack.orientation = .vertical
         leftStack.alignment = .leading
-        leftStack.spacing = 2
+        leftStack.spacing = 3
 
         trailingStack.orientation = .vertical
         trailingStack.alignment = .trailing
@@ -297,30 +295,18 @@ class PositionChartMenuItemView: NSView {
 
 class PositionDetailPanelView: NSView {
     private let contentWidth: CGFloat = PositionDetailLayout.panelWidth
-    private let editorView: PositionEditorView
+    private let infoHostingView: NSHostingView<PositionInfoContent>
     private let dividerContainer = NSView()
     private let divider = NSBox()
     private var chartView: PositionChartMenuItemView?
 
     init(position: PositionInfo?, allSources: [GoldPriceSource], sourcePrices: [GoldPriceSource: PriceInfo]) {
-        self.editorView = PositionEditorView(position: position, allSources: allSources, sourcePrices: sourcePrices)
+        self.infoHostingView = NSHostingView(rootView: PositionInfoContent(position: position))
         super.init(frame: .zero)
 
         wantsLayer = true
-        editorView.autoresizingMask = [.width]
-        addSubview(editorView)
-        editorView.setOnContentChange { [weak self] in
-            guard let self else { return }
-            self.rebuildLayout()
-
-            guard let window = self.window else { return }
-            var frame = window.frame
-            let targetSize = self.preferredPanelSize()
-            let deltaHeight = targetSize.height - frame.height
-            frame.size = targetSize
-            frame.origin.y -= deltaHeight
-            window.setFrame(frame, display: true, animate: true)
-        }
+        infoHostingView.autoresizingMask = [.width]
+        addSubview(infoHostingView)
 
         dividerContainer.autoresizingMask = [.width]
         divider.boxType = .separator
@@ -329,6 +315,19 @@ class PositionDetailPanelView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    func updatePosition(_ position: PositionInfo?) {
+        infoHostingView.rootView = PositionInfoContent(position: position)
+        rebuildLayout()
+
+        guard let window = self.window else { return }
+        var frame = window.frame
+        let targetSize = self.preferredPanelSize()
+        let deltaHeight = targetSize.height - frame.height
+        frame.size = targetSize
+        frame.origin.y -= deltaHeight
+        window.setFrame(frame, display: true, animate: true)
+    }
 
     func updateChart(
         position: PositionInfo?,
@@ -386,17 +385,17 @@ class PositionDetailPanelView: NSView {
     }
 
     private func calculatedHeight() -> CGFloat {
-        let editorHeight = measuredHeight(of: editorView)
+        let infoHeight = measuredHeight(of: infoHostingView)
         let chartHeight = chartView.map(measuredHeight(of:)) ?? 0
         let dividerHeight: CGFloat = chartView == nil ? 0 : 9
-        return chartHeight + dividerHeight + editorHeight
+        return chartHeight + dividerHeight + infoHeight
     }
 
     private func rebuildLayout() {
         let chartHeight = chartView.map(measuredHeight(of:)) ?? 0
-        let editorHeight = measuredHeight(of: editorView)
+        let infoHeight = measuredHeight(of: infoHostingView)
         let dividerHeight: CGFloat = chartView == nil ? 0 : 9
-        let totalHeight = chartHeight + dividerHeight + editorHeight
+        let totalHeight = chartHeight + dividerHeight + infoHeight
 
         frame = NSRect(x: 0, y: 0, width: contentWidth, height: totalHeight)
 
@@ -411,7 +410,7 @@ class PositionDetailPanelView: NSView {
             divider.frame = NSRect(x: 14, y: 4, width: contentWidth - 28, height: 1)
         }
 
-        editorView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: editorHeight)
+        infoHostingView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: infoHeight)
         needsLayout = true
     }
 
@@ -422,6 +421,156 @@ class PositionDetailPanelView: NSView {
         let intrinsic = view.intrinsicContentSize.height
         if intrinsic > 1 { return intrinsic }
         return max(view.frame.height, 1)
+    }
+}
+
+// MARK: - Position Info (read-only display in position sub-panel)
+
+private struct PositionInfoContent: View {
+    let position: PositionInfo?
+
+    var body: some View {
+        if let position {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text("持仓概览")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Text("成本已含手续费")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color.orange.opacity(0.95))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.orange.opacity(0.12))
+                        )
+                }
+
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        heroMetric(
+                            title: "持仓均价",
+                            value: "\(String(format: "%.2f", position.avgPrice)) 元/克",
+                            caption: "买入加权均价"
+                        )
+
+                        heroDivider
+
+                        heroMetric(
+                            title: "成本价",
+                            value: "\(String(format: "%.2f", position.breakEvenPrice)) 元/克",
+                            caption: "含手续费保本价"
+                        )
+                    }
+
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.05))
+                        .frame(height: 1)
+                        .padding(.horizontal, 14)
+
+                    HStack(spacing: 10) {
+                        compactMetric(
+                            title: "克数",
+                            value: "\(String(format: "%.4f", position.grams)) 克"
+                        )
+
+                        compactMetric(
+                            title: "手续费",
+                            value: "\(String(format: "%.2f", position.totalFee)) 元"
+                        )
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.orange.opacity(0.045),
+                                    Color.primary.opacity(0.018)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.primary.opacity(0.05), lineWidth: 0.8)
+                )
+                .overlay(alignment: .topLeading) {
+                    Capsule(style: .continuous)
+                        .fill(Color.orange.opacity(0.88))
+                        .frame(width: 78, height: 3)
+                        .padding(.leading, 14)
+                        .padding(.top, 1)
+                }
+            }
+            .padding(14)
+            .frame(width: PositionDetailLayout.panelWidth, alignment: .leading)
+        }
+    }
+
+    private var heroDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.05))
+            .frame(width: 1)
+            .padding(.vertical, 16)
+    }
+
+    private func heroMetric(title: String, value: String, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Text(value)
+                .font(.system(size: 21, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            Text(caption)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.88))
+        }
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+    }
+
+    private func compactMetric(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Spacer(minLength: 8)
+
+            Text(value)
+                .font(.system(size: 14, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(.primary.opacity(0.94))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.04), lineWidth: 0.7)
+        )
     }
 }
 
@@ -449,18 +598,18 @@ private struct PositionDisplayContent: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("我的持仓")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
 
-                HStack(spacing: 6) {
-                    Text("\(String(format: "%.4f", position.grams))克")
-                        .font(.system(size: 13, weight: .medium))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("均价 \(String(format: "%.2f", position.avgPrice)) 元/克")
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary)
 
-                    Text("\(position.totalFee > 0 ? "成本" : "均价") \(String(format: "%.2f", position.totalFee > 0 ? position.breakEvenPrice : position.avgPrice)) 元/克")
-                        .font(.system(size: 11))
+                    Text("\(String(format: "%.4f", position.grams))克")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
             }
@@ -539,16 +688,12 @@ private struct PositionChartPanelContent: View {
                     .foregroundColor(profitColor)
             }
 
-            HStack(alignment: .bottom, spacing: 16) {
+            HStack(alignment: .bottom, spacing: 12) {
                 chartMetaMetric(title: "现价", value: "\(String(format: "%.2f", currentPrice)) 元/克")
 
-                if position.totalFee > 0 {
-                    chartMetaMetric(title: "保本", value: "\(String(format: "%.2f", position.breakEvenPrice)) 元/克")
-                }
+                Spacer(minLength: 0)
 
                 if let highProfit = highProfit, let lowProfit = lowProfit {
-                    Spacer()
-
                     HStack(spacing: 3) {
                         Text("高")
                             .font(.system(size: 12))
@@ -612,10 +757,10 @@ private struct PositionChartPanelContent: View {
     }
 }
 
-// MARK: - Submenu editor (right-side popover)
+// MARK: - Trade Record Editor (right-side popover)
 
 class PositionEditorView: EditableMenuItemView {
-    private let hostingView: NSHostingView<PositionEditorContent>
+    private let hostingView: NSHostingView<TradeRecordListContent>
     private var externalContentChange: (() -> Void)?
 
     init(
@@ -624,19 +769,15 @@ class PositionEditorView: EditableMenuItemView {
         sourcePrices: [GoldPriceSource: PriceInfo],
         onContentChange: (() -> Void)? = nil
     ) {
-        let hostingView = NSHostingView(rootView: PositionEditorContent(
-            position: position,
+        let hostingView = NSHostingView(rootView: TradeRecordListContent(
             allSources: allSources,
-            sourcePrices: sourcePrices,
             onContentChange: {}
         ))
         self.hostingView = hostingView
         self.externalContentChange = onContentChange
         super.init(contentView: hostingView, minWidth: PositionDetailLayout.panelWidth, dynamicallyResizes: true)
-        hostingView.rootView = PositionEditorContent(
-            position: position,
+        hostingView.rootView = TradeRecordListContent(
             allSources: allSources,
-            sourcePrices: sourcePrices,
             onContentChange: { [weak self] in
                 DispatchQueue.main.async {
                     self?.updateLayoutSizeIfNeeded()
@@ -652,267 +793,266 @@ class PositionEditorView: EditableMenuItemView {
     }
 }
 
-private struct PositionLotDraft: Identifiable, Equatable {
-    let id: String
-    var priceText: String
-    var gramsText: String
+// MARK: - Trade Record List Content
 
-    init(
-        id: String = UUID().uuidString,
-        priceText: String = "",
-        gramsText: String = ""
-    ) {
-        self.id = id
-        self.priceText = priceText
-        self.gramsText = gramsText
-    }
-
-    init(lot: PositionInfo.Lot) {
-        self.id = lot.id
-        self.priceText = String(format: "%.2f", lot.price)
-        self.gramsText = String(format: "%.4f", lot.grams)
-    }
-
-    var hasAnyInput: Bool {
-        !priceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !gramsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-}
-
-private struct PositionEditorContent: View {
-    @State private var lotDrafts: [PositionLotDraft]
-    @State private var feeMode: PositionFeeMode
-    @State private var feeText: String
-    @State private var selectedSource: GoldPriceSource
-    @State private var feedbackText: String?
-    @State private var feedbackIsError = false
-    @State private var showClearConfirm = false
-    @State private var hasSavedPosition: Bool
-
+private struct TradeRecordListContent: View {
     let allSources: [GoldPriceSource]
-    let sourcePrices: [GoldPriceSource: PriceInfo]
     let onContentChange: () -> Void
 
-    init(
-        position: PositionInfo?,
-        allSources: [GoldPriceSource],
-        sourcePrices: [GoldPriceSource: PriceInfo],
-        onContentChange: @escaping () -> Void
-    ) {
-        self.allSources = allSources
-        self.sourcePrices = sourcePrices
-        self.onContentChange = onContentChange
-        let initialDrafts = position?.lots.map(PositionLotDraft.init(lot:)) ?? [PositionLotDraft()]
-        _lotDrafts = State(initialValue: initialDrafts.isEmpty ? [PositionLotDraft()] : initialDrafts)
-        let initialFeeMode = position?.feeMode ?? .perGram
-        let initialFeeValue = position?.feeValue ?? 0
-        _feeMode = State(initialValue: initialFeeMode)
-        _feeText = State(initialValue: initialFeeValue > 0 ? String(format: "%.4f", initialFeeValue) : "")
-        _selectedSource = State(initialValue: position?.source ?? allSources.first ?? .jdZsFinance)
-        _hasSavedPosition = State(initialValue: position != nil)
-    }
+    @State private var transactions: [PositionTransaction] = PriceHistoryManager.shared.positionTransactions
+    @State private var showAddForm = false
+    @State private var showClearConfirmation = false
+    @State private var deletingTransactionId: String?
+    @State private var feedbackText: String?
+    @State private var feedbackIsError = false
 
-    private var validLots: [PositionInfo.Lot] {
-        lotDrafts.compactMap { draft in
-            guard let price = Double(draft.priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  let grams = Double(draft.gramsText.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  price > 0,
-                  grams > 0 else {
-                return nil
+    private var sortedTransactions: [PositionTransaction] {
+        transactions.sorted {
+            if $0.date == $1.date {
+                return $0.id > $1.id
             }
-            return PositionInfo.Lot(id: draft.id, grams: grams, price: price)
+            return $0.date > $1.date
         }
-    }
-
-    private var hasInvalidLotInput: Bool {
-        lotDrafts.contains { draft in
-            guard draft.hasAnyInput else { return false }
-            guard let price = Double(draft.priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  let grams = Double(draft.gramsText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                return true
-            }
-            return price <= 0 || grams <= 0
-        }
-    }
-
-    private var trimmedFeeText: String {
-        feeText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var totalFeeValue: Double {
-        guard !trimmedFeeText.isEmpty else { return 0 }
-        return max(0, Double(trimmedFeeText) ?? 0)
-    }
-
-    private var hasInvalidFeeInput: Bool {
-        guard !trimmedFeeText.isEmpty else { return false }
-        guard let fee = Double(trimmedFeeText) else { return true }
-        return fee < 0
-    }
-
-    private var totalGrams: Double {
-        validLots.reduce(0) { $0 + $1.grams }
-    }
-
-    private var weightedAveragePrice: Double {
-        guard totalGrams > 0 else { return 0 }
-        let totalCost = validLots.reduce(0) { $0 + ($1.grams * $1.price) }
-        return totalCost / totalGrams
-    }
-
-    private var breakEvenPrice: Double {
-        guard totalGrams > 0 else { return 0 }
-        return (validLots.reduce(0) { $0 + ($1.grams * $1.price) } + calculatedFeeAmount) / totalGrams
-    }
-
-    private var calculatedFeeAmount: Double {
-        switch feeMode {
-        case .perGram:
-            return totalFeeValue * totalGrams
-        case .percentage:
-            return validLots.reduce(0) { $0 + ($1.grams * $1.price) } * totalFeeValue / 100
-        }
-    }
-
-    private var feeRuleText: String {
-        switch feeMode {
-        case .perGram:
-            return "\(String(format: "%.4f", totalFeeValue)) 元/克"
-        case .percentage:
-            return "\(String(format: "%.4f", totalFeeValue))%"
-        }
-    }
-
-    private var selectedSourceCurrentPrice: Double? {
-        sourcePrices[selectedSource]?.priceDouble
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("持仓设置")
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(alignment: .firstTextBaseline) {
+                Text("交易记录")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
+
+                Spacer()
+
+                if !transactions.isEmpty {
+                    if showClearConfirmation {
+                        Button("确认清仓") {
+                            clearAllTransactions()
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.red)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button("取消") {
+                            showClearConfirmation = false
+                        }
+                        .font(.system(size: 11))
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Button(action: {
+                            showClearConfirmation = true
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("清仓")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showAddForm.toggle()
+                    }
+                    onContentChange()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: showAddForm ? "xmark" : "plus")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(showAddForm ? "取消" : "新增")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("买入明细")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    Button("新增一笔") {
-                        lotDrafts.append(PositionLotDraft())
+            // Add form
+            if showAddForm {
+                TradeRecordFormContent(
+                    allSources: allSources,
+                    onSave: { transaction in
+                        PriceHistoryManager.shared.addPositionTransaction(transaction)
+                        transactions = PriceHistoryManager.shared.positionTransactions
+                        showAddForm = false
+                        showFeedback("已添加", isError: false)
                         onContentChange()
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                summaryCard
-
-                VStack(spacing: 8) {
-                    ForEach(Array(lotDrafts.indices), id: \.self) { index in
-                        lotRow(draft: $lotDrafts[index], index: index)
-                    }
-                }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            feeInputSection
+            // Transaction list
+            if sortedTransactions.isEmpty {
+                VStack(spacing: 6) {
+                    Text("暂无交易记录")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    Text("点击右上角「新增」添加交易记录")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 6) {
+                        ForEach(sortedTransactions, id: \.id) { transaction in
+                            transactionRow(transaction)
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+            }
 
+            // Data source picker
             VStack(alignment: .leading, spacing: 7) {
                 Text("收益计算相对数据源")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 segmentedPicker(
                     items: allSources,
-                    selected: selectedSource,
+                    selected: currentSource,
                     label: { $0.rawValue },
-                    onSelect: { selectedSource = $0 }
+                    onSelect: { newSource in
+                        updateSource(newSource)
+                    }
                 )
             }
 
-            Divider().opacity(0.65)
-
-            HStack(spacing: 8) {
-                if hasSavedPosition {
-                    if showClearConfirm {
-                        Button("确认清仓") { performClear() }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .foregroundColor(.red)
-                        Button("取消") {
-                            withAnimation { showClearConfirm = false }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    } else {
-                        Button("清仓") {
-                            withAnimation { showClearConfirm = true }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .foregroundColor(.red)
-                    }
-                }
-
-                Spacer()
-
-                HStack(spacing: 8) {
-                    if let feedbackText {
-                        Text(feedbackText)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(feedbackIsError ? .red : .goldGreen)
-                            .lineLimit(1)
-                    }
-
-                    Button("保存") { performSave() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                }
+            // Feedback
+            if let feedbackText {
+                Text(feedbackText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(feedbackIsError ? .red : .goldGreen)
             }
         }
         .padding(14)
         .frame(width: PositionDetailLayout.panelWidth, alignment: .leading)
     }
 
-    // MARK: - Actions
-
-    private func performSave() {
-        guard !validLots.isEmpty else {
-            showFeedback("请至少录入一笔有效买入", isError: true)
-            return
-        }
-        guard !hasInvalidLotInput else {
-            showFeedback("请完善每笔买入的价格和克数", isError: true)
-            return
-        }
-        guard !hasInvalidFeeInput else {
-            showFeedback("手续费请输入大于等于 0 的数字", isError: true)
-            return
-        }
-        let pos = PositionInfo(
-            lots: validLots,
-            sourceRawValue: selectedSource.rawValue,
-            feeMode: feeMode,
-            feeValue: totalFeeValue
-        )
-        PriceHistoryManager.shared.savePosition(pos)
-        hasSavedPosition = true
-        showFeedback("已保存", isError: false)
+    private var currentSource: GoldPriceSource {
+        let sourceRaw = PriceHistoryManager.shared.position?.sourceRawValue
+            ?? PriceHistoryManager.shared.positionTransactions.last?.sourceRawValue
+            ?? allSources.first?.rawValue
+            ?? GoldPriceSource.jdZsFinance.rawValue
+        return GoldPriceSource(rawValue: sourceRaw) ?? .jdZsFinance
     }
 
-    private func performClear() {
+    private func updateSource(_ newSource: GoldPriceSource) {
+        var updated = transactions
+        let now = Date()
+        for i in updated.indices {
+            updated[i].sourceRawValue = newSource.rawValue
+        }
+        PriceHistoryManager.shared.savePositionTransactions(updated)
+        transactions = PriceHistoryManager.shared.positionTransactions
+        onContentChange()
+    }
+
+    // MARK: - Transaction Row
+
+    private func transactionRow(_ transaction: PositionTransaction) -> some View {
+        let isDeleting = deletingTransactionId == transaction.id
+
+        return HStack(alignment: .center, spacing: 8) {
+            // Type badge
+            Text(transaction.type.rawValue)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(transaction.type == .buy ? .red : .goldGreen)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(transaction.type == .buy ? Color.red.opacity(0.1) : Color.goldGreen.opacity(0.1))
+                .clipShape(Capsule())
+
+            // Details
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text("\(String(format: "%.2f", transaction.price)) 元/克")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(.primary)
+
+                    Text("\(String(format: "%.4f", transaction.grams))克")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.primary)
+                }
+
+                HStack(spacing: 8) {
+                    Text("手续费 \(String(format: "%.2f", transaction.fee))元")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+
+                    Text(formatDate(transaction.date))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            // Delete button / confirm
+            if isDeleting {
+                Button("确认删除") {
+                    deleteTransaction(id: transaction.id)
+                }
+                .font(.system(size: 10))
+                .foregroundColor(.red)
+                .buttonStyle(.plain)
+
+                Button("取消") {
+                    deletingTransactionId = nil
+                }
+                .font(.system(size: 10))
+                .buttonStyle(.plain)
+            } else {
+                Button(action: {
+                    deletingTransactionId = transaction.id
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(isDeleting ? Color.red.opacity(0.05) : Color.primary.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isDeleting ? Color.red.opacity(0.2) : Color.primary.opacity(0.05), lineWidth: 0.5)
+        )
+    }
+
+    private func deleteTransaction(id: String) {
+        PriceHistoryManager.shared.removePositionTransaction(id: id)
+        transactions = PriceHistoryManager.shared.positionTransactions
+        deletingTransactionId = nil
+        showFeedback("已删除", isError: false)
+        onContentChange()
+    }
+
+    private func clearAllTransactions() {
         PriceHistoryManager.shared.clearPosition()
-        lotDrafts = [PositionLotDraft()]
-        feeMode = .perGram
-        feeText = ""
-        showClearConfirm = false
-        hasSavedPosition = false
+        transactions = PriceHistoryManager.shared.positionTransactions
+        showClearConfirmation = false
+        showAddForm = false
         showFeedback("已清仓", isError: false)
         onContentChange()
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
     }
 
     private func showFeedback(_ text: String, isError: Bool) {
@@ -922,207 +1062,113 @@ private struct PositionEditorContent: View {
             feedbackText = nil
         }
     }
+}
 
-    private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                metricChip(title: "总克数", value: totalGrams > 0 ? "\(String(format: "%.4f", totalGrams)) 克" : "--")
-                metricChip(title: "买入均价", value: totalGrams > 0 ? "\(String(format: "%.2f", weightedAveragePrice)) 元/克" : "--")
-            }
+// MARK: - Trade Record Form
 
-            HStack(spacing: 10) {
-                metricChip(title: "手续费规则", value: feeRuleText)
-                metricChip(title: "预计手续费", value: "\(String(format: "%.2f", calculatedFeeAmount)) 元")
-                metricChip(title: "保本价", value: totalGrams > 0 ? "\(String(format: "%.2f", breakEvenPrice)) 元/克" : "--")
-            }
+private struct TradeRecordFormContent: View {
+    let allSources: [GoldPriceSource]
+    let onSave: (PositionTransaction) -> Void
 
-            Text("已录入 \(validLots.count) 笔有效买入，保存后将按加权均价并根据手续费规则计算收益。")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-        }
-        .padding(10)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
-        )
-    }
+    @State private var selectedType: PositionTransactionType = .buy
+    @State private var priceText: String = ""
+    @State private var gramsText: String = ""
+    @State private var feeText: String = ""
+    @State private var errorMessage: String?
 
-    private var feeInputSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("手续费规则")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
-
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Type selector
             segmentedPicker(
-                items: PositionFeeMode.allCases,
-                selected: feeMode,
+                items: PositionTransactionType.allCases,
+                selected: selectedType,
                 label: { $0.rawValue },
-                onSelect: { feeMode = $0 }
+                onSelect: { selectedType = $0 }
             )
 
+            // Input fields
             HStack(spacing: 8) {
-                PastableTextField(
-                    text: $feeText,
-                    placeholder: feeMode == .perGram ? "例如: 0.50" : "例如: 0.30"
-                )
-                    .frame(width: 120, height: 22)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("均价 (元/克)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    PastableTextField(text: $priceText, placeholder: "例如: 980.50")
+                        .frame(maxWidth: .infinity)
+                }
 
-                Text(feeMode.inputUnit)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("克数")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    PastableTextField(text: $gramsText, placeholder: "例如: 10.0000")
+                        .frame(maxWidth: .infinity)
+                }
 
-                Text("留空按 0 处理")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("手续费 (元)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    PastableTextField(text: $feeText, placeholder: "例如: 5.00")
+                        .frame(width: 80)
+                }
+            }
+
+            // Error message
+            if let errorMessage {
+                Text(errorMessage)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.red)
             }
 
-            Text(hasInvalidFeeInput ? "请输入大于等于 0 的数字。" : feeHelperText)
-                .font(.system(size: 10))
-                .foregroundColor(hasInvalidFeeInput ? .red : .secondary)
+            // Save button
+            HStack {
+                Spacer()
+                Button("保存") {
+                    performSave()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
         }
-    }
-
-    private var feeHelperText: String {
-        switch feeMode {
-        case .perGram:
-            return "按总克数计算手续费，会计入总成本、收益和收益率。"
-        case .percentage:
-            return "按买入总额的百分比计算手续费，会计入总成本、收益和收益率。"
-        }
-    }
-
-    private func metricChip(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func lotRow(draft: Binding<PositionLotDraft>, index: Int) -> some View {
-        let lotMetrics = lotMetrics(for: draft.wrappedValue)
-
-        return HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("买入价")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-                PastableTextField(text: draft.priceText, placeholder: "例如: 980.50")
-                    .frame(maxWidth: .infinity)
-            }
-            .frame(maxWidth: .infinity)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("克数")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-                PastableTextField(text: draft.gramsText, placeholder: "例如: 10.0000")
-                    .frame(maxWidth: .infinity)
-            }
-            .frame(maxWidth: .infinity)
-
-            HStack(alignment: .top, spacing: 18) {
-                lotMetricField(
-                    title: "手续费",
-                    value: lotMetrics.feeText,
-                    valueColor: .secondary
-                )
-
-                lotMetricField(
-                    title: "收益",
-                    value: lotMetrics.profitText,
-                    valueColor: lotMetrics.profitColor
-                )
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(.leading, 6)
-
-            Button(action: {
-                removeLot(id: draft.wrappedValue.id)
-            }) {
-                Image(systemName: "minus.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(lotDrafts.count > 1 ? .red : .secondary.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 24)
-            .disabled(lotDrafts.count <= 1)
-        }
-        .padding(.leading, 12)
         .padding(10)
-        .background(Color.primary.opacity(0.025))
+        .background(Color.accentColor.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.05), lineWidth: 0.5)
+                .stroke(Color.accentColor.opacity(0.15), lineWidth: 0.5)
         )
-        .overlay(alignment: .leading) {
-            lotIndexBadge(index + 1)
-                .offset(x: -10)
+    }
+
+    private func performSave() {
+        guard let price = Double(priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
+              price > 0 else {
+            errorMessage = "请输入有效的均价"
+            return
         }
-    }
-
-    private func lotIndexBadge(_ number: Int) -> some View {
-        Text("\(number)")
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .foregroundColor(.accentColor)
-            .frame(width: 20, height: 20)
-            .background(Color.accentColor.opacity(0.12))
-            .clipShape(Circle())
-    }
-
-    private func lotMetrics(for draft: PositionLotDraft) -> (feeText: String, profitText: String, profitColor: Color) {
-        guard let price = Double(draft.priceText.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let grams = Double(draft.gramsText.trimmingCharacters(in: .whitespacesAndNewlines)),
-              price > 0,
+        guard let grams = Double(gramsText.trimmingCharacters(in: .whitespacesAndNewlines)),
               grams > 0 else {
-            return ("--", "--", .secondary)
+            errorMessage = "请输入有效的克数"
+            return
+        }
+        let fee = Double(feeText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard fee >= 0 else {
+            errorMessage = "手续费不能为负数"
+            return
         }
 
-        let fee: Double
-        switch feeMode {
-        case .perGram:
-            fee = totalFeeValue * grams
-        case .percentage:
-            fee = price * grams * totalFeeValue / 100
-        }
+        let sourceRawValue = PriceHistoryManager.shared.position?.sourceRawValue
+            ?? PriceHistoryManager.shared.positionTransactions.last?.sourceRawValue
+            ?? allSources.first?.rawValue
+            ?? GoldPriceSource.jdZsFinance.rawValue
 
-        guard let currentPrice = selectedSourceCurrentPrice else {
-            return ("\(String(format: "%.2f", fee))", "--", .secondary)
-        }
-
-        let profit = (currentPrice * grams) - (price * grams) - fee
-        let profitColor: Color = profit >= 0 ? .red : .goldGreen
-        let profitText = "\(profit >= 0 ? "+" : "")\(String(format: "%.2f", profit))"
-        return ("\(String(format: "%.2f", fee))", profitText, profitColor)
-    }
-
-    private func lotMetricField(title: String, value: String, valueColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
-
-            Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.88)
-                .frame(minHeight: 24, alignment: .leading)
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func removeLot(id: String) {
-        guard lotDrafts.count > 1 else { return }
-        lotDrafts.removeAll { $0.id == id }
-        onContentChange()
+        let transaction = PositionTransaction(
+            sourceRawValue: sourceRawValue,
+            type: selectedType,
+            grams: grams,
+            price: price,
+            fee: fee
+        )
+        onSave(transaction)
     }
 }
 

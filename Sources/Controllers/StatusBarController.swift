@@ -185,6 +185,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case goldCircle
         case priceChart(GoldPriceSource)
         case position
+        case tradeRecords
         case settings
         case alerts
         case percentageAlerts
@@ -582,6 +583,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
             onPositionHover: { [weak self] in
                 self?.showHoverDetail(.position)
             },
+            onTradeRecordsHover: { [weak self] in
+                self?.showHoverDetail(.tradeRecords)
+            },
             onSettingsClick: { [weak self] in
                 self?.showHoverDetail(.settings)
             },
@@ -705,6 +709,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
             refreshPriceChildPanel(source: source)
         case .position:
             refreshPositionChildPanel()
+        case .tradeRecords:
+            break
         case .settings, .alerts, .percentageAlerts, .profitAlerts, .extremePriceAlerts:
             break
         }
@@ -844,6 +850,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case .position:
             let view = makePositionDetailView()
             return (view, preferredSize(for: view))
+        case .tradeRecords:
+            let view = makeTradeRecordsDetailView()
+            return (view, preferredSize(for: view))
         case .settings:
             let view = SettingsEditorView(
                 currentSource: dataService.currentSource,
@@ -938,6 +947,15 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         return view
+    }
+
+    private func makeTradeRecordsDetailView() -> NSView {
+        let editorView = PositionEditorView(
+            position: historyManager.position,
+            allSources: GoldPriceSource.domesticSources,
+            sourcePrices: dataService.allSourcePrices
+        )
+        return editorView
     }
 
     private func refreshGoldCircleChildPanel() {

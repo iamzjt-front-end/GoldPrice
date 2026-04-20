@@ -115,6 +115,7 @@ struct StatusBarMainPanelView: View {
     let onGoldCircleOpenItem: (GoldCirclePostItem) -> Void
     let onPriceHover: (GoldPriceSource) -> Void
     let onPositionHover: () -> Void
+    let onTradeRecordsHover: () -> Void
     let onSettingsClick: () -> Void
     let onAlertsClick: () -> Void
     let onPercentageAlertsClick: () -> Void
@@ -172,6 +173,9 @@ struct StatusBarMainPanelView: View {
 
             positionRow
                 .padding(.top, 8)
+
+            tradeRecordsRow
+                .padding(.top, 2)
 
             Divider()
                 .padding(.horizontal, 14)
@@ -318,7 +322,7 @@ struct StatusBarMainPanelView: View {
                 }, onActivate: {
                     onPositionHover()
                 })
-                .frame(width: MainPanelLayout.rowWidth, height: 44)
+                .frame(width: MainPanelLayout.rowWidth, height: 56)
             } else {
                 HStack {
                     Text("我的持仓")
@@ -337,6 +341,15 @@ struct StatusBarMainPanelView: View {
                 }
             }
         }
+    }
+
+    private var tradeRecordsRow: some View {
+        let count = PriceHistoryManager.shared.positionTransactions.count
+        return navigationRow(
+            title: count > 0 ? "交易记录 (\(count))" : "交易记录",
+            onHover: onTradeRecordsHover,
+            action: onTradeRecordsHover
+        )
     }
 
     private func navigationRow(title: String, onHover: @escaping () -> Void, action: @escaping () -> Void) -> some View {
