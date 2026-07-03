@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 
 @main
 struct GoldPriceMobileApp: App {
@@ -84,6 +85,13 @@ private enum MobileFormatting {
         return formatter
     }()
 
+    private static let tradeDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
     static func signedAmountText(_ value: Double) -> String {
         "\(value >= 0 ? "+" : "")\(format(value)) 元"
     }
@@ -99,6 +107,10 @@ private enum MobileFormatting {
     static func timeText(_ date: Date) -> String {
         timeFormatter.string(from: date)
     }
+
+    static func tradeDateTimeText(_ date: Date) -> String {
+        tradeDateTimeFormatter.string(from: date)
+    }
 }
 
 private struct HomeTabView: View {
@@ -108,18 +120,6 @@ private struct HomeTabView: View {
 
     private var performance: PositionPerformance? {
         viewModel.positionPerformance
-    }
-
-    private var todayProfit: Double? {
-        guard
-            let performance,
-            let currentPrice = viewModel.positionCurrentPrice,
-            let yesterdayPrice = viewModel.positionYesterdayPrice
-        else {
-            return nil
-        }
-
-        return performance.estimatedTodayProfit(currentPrice: currentPrice, yesterdayPrice: yesterdayPrice)
     }
 
     var body: some View {
@@ -193,9 +193,9 @@ private struct HomeTabView: View {
 
                 HStack(alignment: .top, spacing: 14) {
                     homeSummaryMetric(
-                        title: "今日收益（元）",
-                        value: todayProfit.map(MobileFormatting.signedNumberText) ?? "--",
-                        tint: (todayProfit ?? 0) >= 0 ? .red : .goldGreen,
+                        title: "持仓收益（元）",
+                        value: MobileFormatting.signedNumberText(performance.unrealizedProfit),
+                        tint: performance.unrealizedProfit >= 0 ? .red : .goldGreen,
                         isProminent: false
                     )
 
@@ -471,13 +471,28 @@ private enum PositionTransactionFilter: String, CaseIterable, Identifiable {
     }
 }
 
+private enum PositionTransactionEditorState: Identifiable {
+    case create(PositionTransactionType)
+    case edit(PositionTransaction)
+
+    var id: String {
+        switch self {
+        case let .create(type):
+            return "create-\(type.rawValue)"
+        case let .edit(transaction):
+            return "edit-\(transaction.id)"
+        }
+    }
+}
+
 private struct TradeTabView: View {
     @ObservedObject var viewModel: GoldPriceMobileViewModel
-    @State private var pendingAction: PositionTransactionType?
+    @State private var transactionEditor: PositionTransactionEditorState?
+    @State private var selectedTransaction: PositionTransaction?
     @State private var recordFilter: PositionTransactionFilter = .all
     @State private var transactionPendingDeletion: PositionTransaction?
 
-    private var isShowingDeleteConfirmation: Binding<Bool> {
+    private var isShowingDeleteAlert: Binding<Bool> {
         Binding(
             get: { transactionPendingDeletion != nil },
             set: { isPresented in
@@ -515,52 +530,52 @@ private struct TradeTabView: View {
             }
             .background(Color.appGroupedBackground.ignoresSafeArea())
             .navigationTitle("交易")
-            .sheet(item: $pendingAction) { action in
+            .sheet(item: $transactionEditor) { editor in
                 PositionTransactionEditorView(
-                    action: action,
-                    defaultSource: viewModel.positionSource,
-                    defaultPrice: viewModel.positionCurrentPrice,
+                    initialAction: editor.defaultAction,
+                    existingTransaction: editor.transaction,
+                    defaultSource: editor.transaction?.source ?? viewModel.positionSource,
+                    defaultPrice: editor.transaction?.price ?? viewModel.positionCurrentPrice,
                     suggestedPrice: { source in
                         viewModel.currentPrice(for: source)
                     },
-                    availableGrams: performance?.currentGrams ?? 0
-                ) { source, grams, price, fee, date, note in
-                    viewModel.addTransaction(
-                        source: source,
-                        type: action,
-                        grams: grams,
-                        price: price,
-                        fee: fee,
-                        date: date,
-                        note: note
-                    )
-                }
-            }
-            .confirmationDialog(
-                "删除这笔交易记录？",
-                isPresented: isShowingDeleteConfirmation,
-                titleVisibility: .visible
-            ) {
-                if let transaction = transactionPendingDeletion {
-                    Button("删除记录", role: .destructive) {
-                        viewModel.removeTransaction(id: transaction.id)
-                        transactionPendingDeletion = nil
+                    allTransactions: viewModel.positionTransactions
+                ) { transaction in
+                    switch editor {
+                    case .create:
+                        viewModel.addTransaction(transaction)
+                    case .edit:
+                        viewModel.updateTransaction(transaction)
                     }
                 }
-            } message: {
-                if let transaction = transactionPendingDeletion {
-                    Text("\(transaction.type.rawValue) \(Self.format(transaction.grams, digits: 4)) 克，\(Self.format(transaction.price)) 元/克")
+            }
+            .navigationDestination(item: $selectedTransaction) { transaction in
+                TradeTransactionDetailView(
+                    transaction: transaction,
+                    currentPrice: transaction.source.flatMap(viewModel.currentPrice(for:))
+                )
+            }
+            .alert(
+                "删除这笔交易记录？",
+                isPresented: isShowingDeleteAlert,
+                presenting: transactionPendingDeletion
+            ) { transaction in
+                Button("取消", role: .cancel) {
+                    transactionPendingDeletion = nil
                 }
+
+                Button("删除", role: .destructive) {
+                    viewModel.removeTransaction(id: transaction.id)
+                    transactionPendingDeletion = nil
+                }
+            } message: { transaction in
+                Text("\(transaction.type.rawValue) \(Self.format(transaction.grams, digits: 4)) 克 · \(Self.format(transaction.price)) 元/克")
             }
         }
     }
 
     private func overviewCard(_ performance: PositionPerformance) -> some View {
         let currentPrice = viewModel.positionCurrentPrice
-        let yesterdayPrice = viewModel.positionYesterdayPrice
-        let todayProfit = currentPrice.flatMap { current in
-            yesterdayPrice.map { performance.estimatedTodayProfit(currentPrice: current, yesterdayPrice: $0) }
-        }
 
         return VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
@@ -606,16 +621,16 @@ private struct TradeTabView: View {
 
             HStack(spacing: 12) {
                 earningsTile(
-                    title: "今日收益（元）",
-                    valueText: todayProfit.map(Self.signedNumberText) ?? "--",
-                    subtitle: yesterdayPrice.map { "按昨收（元/克）\(Self.format($0)) 估算" } ?? "等待昨日价格",
-                    tint: (todayProfit ?? 0) >= 0 ? .red : .goldGreen
+                    title: "持仓收益（元）",
+                    valueText: Self.signedNumberText(performance.unrealizedProfit),
+                    subtitle: "按当前持仓和实时金价计算",
+                    tint: performance.unrealizedProfit >= 0 ? .red : .goldGreen
                 )
 
                 earningsTile(
                     title: "累计收益（元）",
                     valueText: Self.signedNumberText(performance.cumulativeProfit),
-                    subtitle: "已实现 + 当前浮盈",
+                    subtitle: "按交易记录汇总统计",
                     tint: performance.cumulativeProfit >= 0 ? .red : .goldGreen
                 )
             }
@@ -660,7 +675,8 @@ private struct TradeTabView: View {
     private var actionSection: some View {
         HStack(spacing: 12) {
             Button {
-                pendingAction = .buy
+                transactionPendingDeletion = nil
+                transactionEditor = .create(.buy)
             } label: {
                 Label("加仓", systemImage: "plus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -671,7 +687,8 @@ private struct TradeTabView: View {
             .tint(.orange)
 
             Button {
-                pendingAction = .sell
+                transactionPendingDeletion = nil
+                transactionEditor = .create(.sell)
             } label: {
                 Label("减仓", systemImage: "minus.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -687,7 +704,7 @@ private struct TradeTabView: View {
     private func profitBreakdownCard(_ performance: PositionPerformance) -> some View {
         let breakdownItems: [(String, String, Color)] = [
             ("已实现收益（元）", Self.signedNumberText(performance.realizedProfit), performance.realizedProfit >= 0 ? .red : .goldGreen),
-            ("持仓浮盈（元）", Self.signedNumberText(performance.unrealizedProfit), performance.unrealizedProfit >= 0 ? .red : .goldGreen),
+            ("持仓收益（元）", Self.signedNumberText(performance.unrealizedProfit), performance.unrealizedProfit >= 0 ? .red : .goldGreen),
             ("平均成本（元/克）", Self.format(performance.avgCost), .primary),
             ("累计手续费估算（元）", Self.format(performance.totalFees), .primary)
         ]
@@ -754,11 +771,25 @@ private struct TradeTabView: View {
                     .foregroundColor(.secondary)
                     .padding(.vertical, 12)
             } else {
-                VStack(spacing: 12) {
-                    ForEach(filteredTransactions) { transaction in
-                        transactionRow(transaction)
+                TradeTransactionListView(
+                    transactions: filteredTransactions,
+                    currentPriceProvider: { source in
+                        source.flatMap(viewModel.currentPrice(for:))
+                    },
+                    onSelect: { transaction in
+                        transactionPendingDeletion = nil
+                        selectedTransaction = transaction
+                    },
+                    onEdit: { transaction in
+                        transactionPendingDeletion = nil
+                        transactionEditor = .edit(transaction)
+                    },
+                    onRequestDelete: { transaction in
+                        selectedTransaction = nil
+                        transactionEditor = nil
+                        transactionPendingDeletion = transaction
                     }
-                }
+                )
             }
         }
         .padding(18)
@@ -810,72 +841,203 @@ private struct TradeTabView: View {
         )
     }
 
-    private func transactionRow(_ transaction: PositionTransaction) -> some View {
-        let accent: Color = transaction.type == .buy ? .red : .goldGreen
-        let currentPrice = transaction.source.flatMap(viewModel.currentPrice(for:))
-        let feeEstimateText = MobileFormatting.format(transaction.feeAmount(referencePrice: currentPrice ?? transaction.price))
-        let feeEstimateLabel = currentPrice == nil ? "按成交价估算手续费" : "按实时价估算手续费"
+    private static func signedNumberText(_ value: Double) -> String {
+        MobileFormatting.signedNumberText(value)
+    }
 
-        return HStack(alignment: .top, spacing: 12) {
-            NavigationLink {
-                TradeTransactionDetailView(transaction: transaction, currentPrice: currentPrice)
-            } label: {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top) {
-                        HStack(spacing: 8) {
-                            Image(systemName: transaction.type.symbolName)
-                                .foregroundColor(accent)
-                            Text(transaction.type.rawValue)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(accent)
-                        }
+    private static func format(_ value: Double, digits: Int = 2) -> String {
+        MobileFormatting.format(value, digits: digits)
+    }
+}
 
-                        Spacer()
+private struct TradeTransactionListView: UIViewRepresentable {
+    let transactions: [PositionTransaction]
+    let currentPriceProvider: (GoldPriceSource?) -> Double?
+    let onSelect: (PositionTransaction) -> Void
+    let onEdit: (PositionTransaction) -> Void
+    let onRequestDelete: (PositionTransaction) -> Void
 
-                        VStack(alignment: .trailing, spacing: 8) {
-                            Text(transaction.date.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary)
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
 
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.secondary.opacity(0.8))
-                        }
-                    }
+    func makeUIView(context: Context) -> SelfSizingTransactionTableView {
+        let tableView = SelfSizingTransactionTableView(frame: .zero, style: .plain)
+        tableView.backgroundColor = .clear
+        tableView.separatorStyle = .none
+        tableView.showsVerticalScrollIndicator = false
+        tableView.showsHorizontalScrollIndicator = false
+        tableView.isScrollEnabled = false
+        tableView.allowsSelection = true
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 124
+        tableView.contentInset = .zero
+        tableView.sectionHeaderHeight = 0
+        tableView.sectionFooterHeight = 0
+        tableView.tableHeaderView = UIView(frame: .zero)
+        tableView.tableFooterView = UIView(frame: .zero)
+        tableView.register(TradeTransactionTableViewCell.self, forCellReuseIdentifier: TradeTransactionTableViewCell.reuseIdentifier)
+        tableView.dataSource = context.coordinator
+        tableView.delegate = context.coordinator
+        return tableView
+    }
 
-                    HStack {
-                        transactionMetric(title: "克数（克）", value: MobileFormatting.format(transaction.grams, digits: 4))
-                        Spacer()
-                        transactionMetric(title: "成交价（元/克）", value: MobileFormatting.format(transaction.price))
-                        Spacer()
-                        transactionMetric(title: "手续费", value: "\(MobileFormatting.format(transaction.feeRate, digits: 3))%")
-                    }
+    func updateUIView(_ uiView: SelfSizingTransactionTableView, context: Context) {
+        context.coordinator.parent = self
+        uiView.reloadData()
+        uiView.invalidateIntrinsicContentSize()
+    }
 
-                    Text("\(feeEstimateLabel) \(feeEstimateText) 元")
-                        .font(.system(size: 12))
+    final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate {
+        var parent: TradeTransactionListView
+
+        init(parent: TradeTransactionListView) {
+            self.parent = parent
+        }
+
+        func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+            parent.transactions.count
+        }
+
+        func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+            guard
+                let cell = tableView.dequeueReusableCell(
+                    withIdentifier: TradeTransactionTableViewCell.reuseIdentifier,
+                    for: indexPath
+                ) as? TradeTransactionTableViewCell
+            else {
+                return UITableViewCell(style: .default, reuseIdentifier: nil)
+            }
+
+            let transaction = parent.transactions[indexPath.row]
+            let currentPrice = parent.currentPriceProvider(transaction.source)
+            cell.configure(transaction: transaction, currentPrice: currentPrice)
+            return cell
+        }
+
+        func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            let transaction = parent.transactions[indexPath.row]
+            tableView.deselectRow(at: indexPath, animated: true)
+            parent.onSelect(transaction)
+        }
+
+        func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+            let transaction = parent.transactions[indexPath.row]
+
+            let deleteAction = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, completion in
+                self?.parent.onRequestDelete(transaction)
+                completion(true)
+            }
+            deleteAction.backgroundColor = .systemRed
+
+            let editAction = UIContextualAction(style: .normal, title: "编辑") { [weak self] _, _, completion in
+                self?.parent.onEdit(transaction)
+                completion(true)
+            }
+            editAction.backgroundColor = .systemOrange
+
+            let configuration = UISwipeActionsConfiguration(actions: [deleteAction, editAction])
+            configuration.performsFirstActionWithFullSwipe = false
+            return configuration
+        }
+    }
+}
+
+private final class SelfSizingTransactionTableView: UITableView {
+    override var contentSize: CGSize {
+        didSet {
+            if oldValue != contentSize {
+                invalidateIntrinsicContentSize()
+            }
+        }
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: contentSize.height)
+    }
+}
+
+private final class TradeTransactionTableViewCell: UITableViewCell {
+    static let reuseIdentifier = "TradeTransactionTableViewCell"
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
+        selectionStyle = .none
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(transaction: PositionTransaction, currentPrice: Double?) {
+        contentConfiguration = UIHostingConfiguration {
+            TradeTransactionRowCard(transaction: transaction, currentPrice: currentPrice)
+        }
+        .margins(.all, 0)
+    }
+}
+
+private struct TradeTransactionRowCard: View {
+    let transaction: PositionTransaction
+    let currentPrice: Double?
+
+    private var accent: Color {
+        transaction.type == .buy ? .red : .goldGreen
+    }
+
+    private var feeEstimateText: String {
+        MobileFormatting.format(transaction.feeAmount(referencePrice: currentPrice ?? transaction.price))
+    }
+
+    private var feeEstimateLabel: String {
+        currentPrice == nil ? "按成交价估算手续费" : "按实时价估算手续费"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                HStack(spacing: 8) {
+                    Image(systemName: transaction.type.symbolName)
+                        .foregroundColor(accent)
+                    Text(transaction.type.rawValue)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(accent)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text(MobileFormatting.tradeDateTimeText(transaction.date))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
 
-                    if !transaction.note.isEmpty {
-                        Text(transaction.note)
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .padding(.top, 2)
-                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary.opacity(0.8))
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
 
-            Button(role: .destructive) {
-                transactionPendingDeletion = transaction
-            } label: {
-                Label("删除", systemImage: "trash")
-                    .labelStyle(.iconOnly)
+            HStack {
+                TradeTransactionMetricView(title: "克数（克）", value: MobileFormatting.format(transaction.grams, digits: 4))
+                Spacer()
+                TradeTransactionMetricView(title: "成交价（元/克）", value: MobileFormatting.format(transaction.price))
+                Spacer()
+                TradeTransactionMetricView(title: "手续费", value: "\(MobileFormatting.format(transaction.feeRate, digits: 3))%")
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.secondary)
-            .padding(.top, 2)
+
+            Text("\(feeEstimateLabel) \(feeEstimateText) 元")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            if !transaction.note.isEmpty {
+                Text(transaction.note)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
+            }
         }
         .padding(16)
         .background(
@@ -883,8 +1045,13 @@ private struct TradeTabView: View {
                 .fill(Color.primary.opacity(0.04))
         )
     }
+}
 
-    private func transactionMetric(title: String, value: String) -> some View {
+private struct TradeTransactionMetricView: View {
+    let title: String
+    let value: String
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
@@ -893,14 +1060,6 @@ private struct TradeTabView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.primary)
         }
-    }
-
-    private static func signedNumberText(_ value: Double) -> String {
-        MobileFormatting.signedNumberText(value)
-    }
-
-    private static func format(_ value: Double, digits: Int = 2) -> String {
-        MobileFormatting.format(value, digits: digits)
     }
 }
 
@@ -1030,7 +1189,7 @@ private struct TradeTransactionDetailView: View {
                 LabeledContent("数据源", value: sourceLabel)
                 LabeledContent(
                     "交易时间",
-                    value: transaction.date.formatted(date: .complete, time: .shortened)
+                    value: MobileFormatting.tradeDateTimeText(transaction.date)
                 )
             }
 
@@ -1062,12 +1221,13 @@ private struct TradeTransactionDetailView: View {
 private struct PositionTransactionEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
-    let action: PositionTransactionType
+    let existingTransaction: PositionTransaction?
     let defaultPrice: Double?
     let suggestedPrice: (GoldPriceSource) -> Double?
-    let availableGrams: Double
-    let onSave: (GoldPriceSource, Double, Double, Double, Date, String) -> Void
+    let allTransactions: [PositionTransaction]
+    let onSave: (PositionTransaction) -> Void
 
+    @State private var action: PositionTransactionType
     @State private var selectedSource: GoldPriceSource
     @State private var grams: String
     @State private var price: String
@@ -1077,30 +1237,46 @@ private struct PositionTransactionEditorView: View {
     @State private var errorMessage: String?
 
     init(
-        action: PositionTransactionType,
+        initialAction: PositionTransactionType,
+        existingTransaction: PositionTransaction? = nil,
         defaultSource: GoldPriceSource,
         defaultPrice: Double?,
         suggestedPrice: @escaping (GoldPriceSource) -> Double?,
-        availableGrams: Double,
-        onSave: @escaping (GoldPriceSource, Double, Double, Double, Date, String) -> Void
+        allTransactions: [PositionTransaction],
+        onSave: @escaping (PositionTransaction) -> Void
     ) {
-        self.action = action
+        self.existingTransaction = existingTransaction
         self.defaultPrice = defaultPrice
         self.suggestedPrice = suggestedPrice
-        self.availableGrams = availableGrams
+        self.allTransactions = allTransactions
         self.onSave = onSave
 
-        _selectedSource = State(initialValue: defaultSource)
-        _grams = State(initialValue: "")
-        _price = State(initialValue: (suggestedPrice(defaultSource) ?? defaultPrice).map { Self.stringValue($0) } ?? "")
-        _fee = State(initialValue: "0")
+        let seedTransaction = existingTransaction
+        let seedSource = seedTransaction?.source ?? defaultSource
+        let seedPrice = seedTransaction?.price ?? suggestedPrice(seedSource) ?? defaultPrice
+
+        _action = State(initialValue: seedTransaction?.type ?? initialAction)
+        _selectedSource = State(initialValue: seedSource)
+        _grams = State(initialValue: seedTransaction.map { Self.stringValue($0.grams, digits: 4) } ?? "")
+        _price = State(initialValue: seedPrice.map { Self.stringValue($0) } ?? "")
+        _fee = State(initialValue: seedTransaction.map { Self.stringValue($0.feeRate, digits: 3) } ?? "0")
+        _date = State(initialValue: seedTransaction?.date ?? Date())
+        _note = State(initialValue: seedTransaction?.note ?? "")
+    }
+
+    private var navigationTitle: String {
+        existingTransaction == nil ? "新增交易" : "编辑交易"
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("交易信息") {
-                    LabeledContent("操作", value: action.rawValue)
+                    Picker("操作", selection: $action) {
+                        ForEach(PositionTransactionType.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
 
                     Picker("数据源", selection: $selectedSource) {
                         ForEach(GoldPriceSource.allCases, id: \.self) { source in
@@ -1118,7 +1294,7 @@ private struct PositionTransactionEditorView: View {
                         .keyboardType(.decimalPad)
 
                     if action == .sell {
-                        Text("当前最多可减 \(Self.stringValue(availableGrams, digits: 4)) 克")
+                        Text("保存时会校验该时点可用持仓，不能超过实际可减数量。")
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
                     }
@@ -1146,7 +1322,7 @@ private struct PositionTransactionEditorView: View {
                     price = Self.stringValue(latestPrice)
                 }
             }
-            .navigationTitle(action.rawValue)
+            .navigationTitle(navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") {
@@ -1185,12 +1361,28 @@ private struct PositionTransactionEditorView: View {
             return
         }
 
-        if action == .sell, parsedGrams - availableGrams > 0.0000001 {
-            errorMessage = "减仓不能超过当前持仓。"
+        let transaction = PositionTransaction(
+            id: existingTransaction?.id ?? UUID().uuidString,
+            date: date,
+            sourceRawValue: selectedSource.rawValue,
+            type: action,
+            grams: parsedGrams,
+            price: parsedPrice,
+            fee: parsedFee,
+            note: note
+        )
+
+        let updatedTransactions = allTransactions.filter { $0.id != transaction.id } + [transaction]
+        if let invalidSell = PositionLedger.firstInsufficientSell(in: updatedTransactions) {
+            if invalidSell.transaction.id == transaction.id {
+                errorMessage = "这笔减仓超过该时点可用持仓，最多可减 \(Self.stringValue(invalidSell.availableGrams, digits: 4)) 克。"
+            } else {
+                errorMessage = "这次保存会让 \(MobileFormatting.tradeDateTimeText(invalidSell.transaction.date)) 的减仓记录超出持仓，请调整后再试。"
+            }
             return
         }
 
-        onSave(selectedSource, parsedGrams, parsedPrice, parsedFee, date, note)
+        onSave(transaction)
         dismiss()
     }
 
@@ -1198,6 +1390,26 @@ private struct PositionTransactionEditorView: View {
         String(format: "%.\(digits)f", value)
             .replacingOccurrences(of: #"(\.\d*?[1-9])0+$"#, with: "$1", options: .regularExpression)
             .replacingOccurrences(of: #"\.0+$"#, with: "", options: .regularExpression)
+    }
+}
+
+private extension PositionTransactionEditorState {
+    var defaultAction: PositionTransactionType {
+        switch self {
+        case let .create(action):
+            return action
+        case let .edit(transaction):
+            return transaction.type
+        }
+    }
+
+    var transaction: PositionTransaction? {
+        switch self {
+        case .create:
+            return nil
+        case let .edit(transaction):
+            return transaction
+        }
     }
 }
 #endif

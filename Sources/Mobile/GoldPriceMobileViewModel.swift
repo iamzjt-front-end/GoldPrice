@@ -80,6 +80,16 @@ final class GoldPriceMobileViewModel: ObservableObject {
         refreshLocalState()
     }
 
+    func addTransaction(_ transaction: PositionTransaction) {
+        historyManager.addPositionTransaction(transaction)
+        refreshLocalState()
+    }
+
+    func updateTransaction(_ transaction: PositionTransaction) {
+        historyManager.updatePositionTransaction(transaction)
+        refreshLocalState()
+    }
+
     func removeTransaction(id: String) {
         historyManager.removePositionTransaction(id: id)
         refreshLocalState()

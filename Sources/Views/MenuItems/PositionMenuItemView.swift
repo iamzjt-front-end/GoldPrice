@@ -15,7 +15,7 @@ private enum PositionMenuItemFormatters {
 }
 
 private enum PositionDetailLayout {
-    static let panelWidth: CGFloat = 420
+    static let panelWidth: CGFloat = 392
 }
 
 // MARK: - Base class for editable menu item views (handles focus & paste in NSMenu)
@@ -1330,7 +1330,6 @@ private struct SettingsEditorContent: View {
     @State private var refreshIntervalText: String
     @State private var selectedStatusBarSources: [GoldPriceSource]
     @State private var defaultAlertRepeatInterval: AlertRepeatInterval
-    @State private var saved = false
 
     private let iconOptions = ["🌕", "💰", "🥇", "⭐", "💛", "🪙", "📈", "G", "Au", ""]
 
@@ -1366,29 +1365,21 @@ private struct SettingsEditorContent: View {
             settingsContent
 
             Spacer(minLength: 0)
-
-            Divider()
-
-            HStack {
-                Spacer()
-                HStack(spacing: 8) {
-                    if saved {
-                        Text("已保存 ✓")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.goldGreen)
-                    }
-                    Button("保存") {
-                        saveSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-            .padding(.top, 2)
         }
         .padding(14)
         .frame(width: 320)
         .frame(maxHeight: .infinity, alignment: .top)
+        .onChange(of: selectedIcon) { _ in persistSettings() }
+        .onChange(of: profitDisplay) { _ in persistSettings() }
+        .onChange(of: statusBarPriceUsesDailyChangeColor) { _ in persistSettings() }
+        .onChange(of: statusBarDailyChangeUsesColor) { _ in persistSettings() }
+        .onChange(of: statusBarProfitUsesColor) { _ in persistSettings() }
+        .onChange(of: dailyChangeDisplay) { _ in persistSettings() }
+        .onChange(of: selectedStatusBarSources) { _ in persistSettings() }
+        .onChange(of: defaultAlertRepeatInterval) { _ in persistSettings() }
+        .onChange(of: refreshIntervalText) { _ in
+            applyRefreshIntervalText(normalize: false)
+        }
     }
 
     private var settingsContent: some View {
@@ -1489,8 +1480,14 @@ private struct SettingsEditorContent: View {
                     .foregroundColor(.secondary)
 
                 HStack(spacing: 6) {
-                    PastableTextField(text: $refreshIntervalText, placeholder: "秒数")
-                        .frame(width: 72, height: 22)
+                    PastableTextField(
+                        text: $refreshIntervalText,
+                        placeholder: "秒数",
+                        onEditingEnded: {
+                            applyRefreshIntervalText(normalize: true)
+                        }
+                    )
+                    .frame(width: 72, height: 22)
 
                     Text("s")
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -1523,27 +1520,32 @@ private struct SettingsEditorContent: View {
         }
     }
 
-    private func saveSettings() {
-        syncRefreshIntervalInput()
-        let settings = AppSettings(
-            statusBarIcon: selectedIcon,
-            statusBarSourceRawValues: selectedStatusBarSources.map(\.rawValue),
-            profitDisplay: profitDisplay,
-            statusBarPriceUsesDailyChangeColor: statusBarPriceUsesDailyChangeColor,
-            statusBarDailyChangeUsesColor: statusBarDailyChangeUsesColor,
-            statusBarProfitUsesColor: statusBarProfitUsesColor,
-            dailyChangeDisplay: dailyChangeDisplay,
-            refreshInterval: refreshIntervalSeconds,
-            defaultAlertRepeatInterval: defaultAlertRepeatInterval
-        )
+    private func persistSettings() {
+        let previousSettings = PriceHistoryManager.shared.settings
+        var settings = previousSettings
+        settings.statusBarIcon = selectedIcon
+        settings.statusBarSources = selectedStatusBarSources
+        settings.profitDisplay = profitDisplay
+        settings.statusBarPriceUsesDailyChangeColor = statusBarPriceUsesDailyChangeColor
+        settings.statusBarDailyChangeUsesColor = statusBarDailyChangeUsesColor
+        settings.statusBarProfitUsesColor = statusBarProfitUsesColor
+        settings.dailyChangeDisplay = dailyChangeDisplay
+        settings.refreshInterval = refreshIntervalSeconds
+        settings.defaultAlertRepeatInterval = defaultAlertRepeatInterval
+
+        guard settings != previousSettings else { return }
+
         PriceHistoryManager.shared.saveSettings(settings)
-        syncExistingAlerts(with: settings)
-        onSourceChange(selectedStatusBarSources.first ?? .jdZsFinance)
-        onSave()
-        saved = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            saved = false
+
+        if settings.defaultAlertRepeatInterval != previousSettings.defaultAlertRepeatInterval {
+            syncExistingAlerts(with: settings)
         }
+
+        if settings.primaryStatusBarSource != previousSettings.primaryStatusBarSource {
+            onSourceChange(settings.primaryStatusBarSource)
+        }
+
+        onSave()
     }
 
     private func syncExistingAlerts(with settings: AppSettings) {
@@ -1574,10 +1576,20 @@ private struct SettingsEditorContent: View {
         historyManager.saveProfitAlerts(syncedProfitAlerts)
     }
 
-    private func syncRefreshIntervalInput() {
-        let parsed = Int(refreshIntervalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? refreshIntervalSeconds
+    private func applyRefreshIntervalText(normalize: Bool) {
+        let trimmedText = refreshIntervalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = Int(trimmedText) else {
+            if normalize {
+                refreshIntervalText = "\(refreshIntervalSeconds)"
+            }
+            return
+        }
+
         refreshIntervalSeconds = max(1, parsed)
-        refreshIntervalText = "\(refreshIntervalSeconds)"
+        if normalize {
+            refreshIntervalText = "\(refreshIntervalSeconds)"
+        }
+        persistSettings()
     }
 
     private var orderedStatusBarSources: [GoldPriceSource] {
@@ -2588,6 +2600,7 @@ private struct ExtremePriceAlertEditorContent: View {
 private struct PastableTextField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
+    var onEditingEnded: () -> Void = {}
 
     func makeNSView(context: Context) -> NSTextField {
         let tf = NSTextField()
@@ -2602,6 +2615,7 @@ private struct PastableTextField: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
+        context.coordinator.parent = self
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
@@ -2612,12 +2626,16 @@ private struct PastableTextField: NSViewRepresentable {
     }
 
     class Coordinator: NSObject, NSTextFieldDelegate {
-        let parent: PastableTextField
+        var parent: PastableTextField
         init(_ parent: PastableTextField) { self.parent = parent }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let tf = obj.object as? NSTextField else { return }
             parent.text = tf.stringValue
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            parent.onEditingEnded()
         }
     }
 }

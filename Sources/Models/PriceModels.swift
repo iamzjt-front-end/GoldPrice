@@ -868,7 +868,7 @@ enum PositionTransactionType: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct PositionTransaction: Codable, Equatable, Identifiable {
+struct PositionTransaction: Codable, Equatable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
         case date
@@ -1098,6 +1098,35 @@ enum PositionLedger {
             feeMode: .percentage,
             feeValue: summary.currentFeeRate
         )
+    }
+
+    static func firstInsufficientSell(
+        in transactions: [PositionTransaction]
+    ) -> (transaction: PositionTransaction, availableGrams: Double)? {
+        let sorted = orderedTransactionsForLedger(transactions)
+        var holdingsBySource: [String: Double] = [:]
+
+        for transaction in sorted {
+            guard let source = transaction.source, transaction.grams > 0 else {
+                continue
+            }
+
+            let key = source.rawValue
+            let availableGrams = holdingsBySource[key, default: 0]
+
+            switch transaction.type {
+            case .buy:
+                holdingsBySource[key] = availableGrams + transaction.grams
+            case .sell:
+                if transaction.grams - availableGrams > 0.0000001 {
+                    return (transaction, max(0, availableGrams))
+                }
+
+                holdingsBySource[key] = max(0, availableGrams - transaction.grams)
+            }
+        }
+
+        return nil
     }
 
     private static func orderedTransactionsForLedger(_ transactions: [PositionTransaction]) -> [PositionTransaction] {

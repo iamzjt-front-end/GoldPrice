@@ -138,6 +138,16 @@ class PriceHistoryManager {
         savePositionTransactions(updated)
     }
 
+    func updatePositionTransaction(_ transaction: PositionTransaction) {
+        guard let index = positionTransactions.firstIndex(where: { $0.id == transaction.id }) else {
+            return
+        }
+
+        var updated = positionTransactions
+        updated[index] = transaction
+        savePositionTransactions(updated)
+    }
+
     func removePositionTransaction(id: String) {
         positionTransactions.removeAll { $0.id == id }
         savePositionTransactions(positionTransactions)
